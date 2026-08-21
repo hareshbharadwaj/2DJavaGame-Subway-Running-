@@ -1,0 +1,6 @@
+1. Open the workspace folder in Cursor.
+2. Open the integrated terminal.
+3. Run: Set-Location 'c:\Users\hesh2\OneDrive\Desktop\subway game'
+4. Run: & 'C:\Program Files\Microsoft\jdk-21.0.12.8-hotspot\bin\javac.exe' SimpleRunnerGame.java
+5. Run: & 'C:\Program Files\Microsoft\jdk-21.0.12.8-hotspot\bin\java.exe' -cp . SimpleRunnerGame
+6. Use WASD or the arrow keys to move between lanes, press Space or Up to jump, and press R after a game over to restart.
