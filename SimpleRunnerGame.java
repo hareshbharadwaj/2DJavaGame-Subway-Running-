@@ -43,12 +43,13 @@ public class SimpleRunnerGame extends JFrame {
         private static final int PLAYER_WIDTH = 44;
         private static final int PLAYER_HEIGHT = 56;
         private static final double GROUND_Y = ROAD_Y + ROAD_H - 92.0; // 560.0
-        private static final double GRAVITY = 1750.0; // px/s^2
-        private static final double JUMP_STRENGTH = 560.0; // px/s, yields ~90px apex & ~0.64s jump
+        private static final double GRAVITY = 2200.0; // px/s^2
+        private static final double JUMP_STRENGTH = 700.0; // px/s, yields ~111px apex & ~0.63s jump
         private static final double MAX_JUMP_APEX = (JUMP_STRENGTH * JUMP_STRENGTH) / (2.0 * GRAVITY);
         private static final double INITIAL_SPEED = 300.0; // px/s
         private static final double MAX_SPEED = 560.0; // px/s
         private static final int TARGET_FPS = 60;
+        private static final int STARTING_LIVES = 1;
         private static final int MAX_LIVES = 3;
 
         private GameState gameState = GameState.START_MENU;
@@ -263,7 +264,7 @@ public class SimpleRunnerGame extends JFrame {
             score = 0;
             coinsCollected = 0;
             distance = 0;
-            lives = 0;
+            lives = STARTING_LIVES;
             obstacleSpeed = INITIAL_SPEED;
             spawnTimer = 0.0;
             spawnInterval = 0.85;
@@ -478,6 +479,12 @@ public class SimpleRunnerGame extends JFrame {
                 while (iterator.hasNext()) {
                     Obstacle obstacle = iterator.next();
                     if (!obstacle.isHit() && playerHitbox.intersects(obstacle.getHitbox())) {
+                        double heightAboveGround = GROUND_Y - player.getY();
+                        // If player is high enough, they successfully jump over
+                        if (heightAboveGround > 30.0) {
+                            continue;
+                        }
+
                         obstacle.setHit(true);
                         iterator.remove(); // Remove immediately to prevent duplicate collision
 
@@ -1067,10 +1074,11 @@ public class SimpleRunnerGame extends JFrame {
 
             Rectangle2D.Double getHitbox() {
                 // Inset body hitbox to avoid unfair pixel collisions
-                double padX = 5.0;
-                double padY = 4.0;
-                double jumpLeniency = onGround ? 0.0 : 12.0;
-                return new Rectangle2D.Double(x + padX, y + padY, PLAYER_WIDTH - padX * 2.0, PLAYER_HEIGHT - padY * 2.0 - jumpLeniency);
+                double padX = 8.0;
+                double padY = 6.0;
+                double jumpLeniency = onGround ? 0.0 : 24.0;
+                return new Rectangle2D.Double(x + padX, y + padY,
+                    PLAYER_WIDTH - padX * 2.0, PLAYER_HEIGHT - padY * 2.0 - jumpLeniency);
             }
         }
 
