@@ -12,20 +12,328 @@ import java.io.File;
 import java.awt.Image;
 
 public class SimpleRunnerGame extends JFrame {
+    public static CardLayout cardLayout = new CardLayout();
+    public static JPanel mainPanel = new JPanel(cardLayout);
+    public static GamePanel gamePanel;
+    public static HomePanel homePanel;
+    public static LeaderboardPanel leaderboardPanel;
+    public static String currentUsername = SessionManager.loadSession();
+
+    public static void saveUsername(String name) {
+        currentUsername = name;
+        SessionManager.saveSession(name);
+    }
+
+    public static LoginPanel loginPanel;
+
     public SimpleRunnerGame() {
-        super("Simple Runner Game");
+        super("JavaDash");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
-        setContentPane(new GamePanel());
+        
+        DbManager.initializeTables();
+        
+        gamePanel = new GamePanel();
+        homePanel = new HomePanel();
+        leaderboardPanel = new LeaderboardPanel();
+        loginPanel = new LoginPanel();
+        
+        mainPanel.add(loginPanel, "LOGIN");
+        mainPanel.add(homePanel, "HOME");
+        mainPanel.add(gamePanel, "GAME");
+        mainPanel.add(leaderboardPanel, "LEADERBOARD");
+        
+        setContentPane(mainPanel);
         pack();
         setLocationRelativeTo(null);
+    }
+
+    public static void showScreen(String name) {
+        if (name.equals("HOME")) homePanel.refresh();
+        if (name.equals("LEADERBOARD")) leaderboardPanel.refresh();
+        if (name.equals("GAME")) {
+            gamePanel.resetGame();
+            gamePanel.requestFocusInWindow();
+        }
+        cardLayout.show(mainPanel, name);
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             SimpleRunnerGame game = new SimpleRunnerGame();
             game.setVisible(true);
+            if (currentUsername == null || currentUsername.isEmpty()) {
+                showScreen("LOGIN");
+            } else {
+                showScreen("HOME");
+            }
         });
+    }
+
+    private static class LoginPanel extends JPanel {
+        private JTextField nameField;
+        private JPasswordField passField;
+        private JLabel msgLabel;
+
+        public LoginPanel() {
+            setPreferredSize(new Dimension(420, 760));
+            setBackground(new Color(12, 18, 30));
+            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+
+            add(Box.createVerticalStrut(150));
+
+            JLabel title = new JLabel("JavaDash Login");
+            title.setFont(new Font("SansSerif", Font.BOLD, 40));
+            title.setForeground(new Color(52, 208, 255));
+            title.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(title);
+
+            add(Box.createVerticalStrut(50));
+
+            JLabel userLbl = new JLabel("Username:");
+            userLbl.setForeground(Color.WHITE);
+            userLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(userLbl);
+
+            nameField = new JTextField(15);
+            nameField.setMaximumSize(new Dimension(200, 30));
+            nameField.setHorizontalAlignment(JTextField.CENTER);
+            add(nameField);
+
+            add(Box.createVerticalStrut(20));
+
+            JLabel passLbl = new JLabel("Password:");
+            passLbl.setForeground(Color.WHITE);
+            passLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(passLbl);
+
+            passField = new JPasswordField(15);
+            passField.setMaximumSize(new Dimension(200, 30));
+            passField.setHorizontalAlignment(JTextField.CENTER);
+            add(passField);
+
+            add(Box.createVerticalStrut(10));
+
+            msgLabel = new JLabel(" ");
+            msgLabel.setForeground(new Color(255, 100, 100));
+            msgLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(msgLabel);
+
+            add(Box.createVerticalStrut(20));
+
+            JPanel btnPanel = new JPanel();
+            btnPanel.setOpaque(false);
+            btnPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 20, 0));
+
+            JButton loginBtn = new JButton("LOGIN");
+            loginBtn.addActionListener(e -> attemptLogin());
+
+            JButton createBtn = new JButton("CREATE");
+            createBtn.addActionListener(e -> attemptCreate());
+
+            btnPanel.add(loginBtn);
+            btnPanel.add(createBtn);
+            btnPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            add(btnPanel);
+        }
+
+        private void attemptLogin() {
+            String u = nameField.getText().trim();
+            String p = new String(passField.getPassword()).trim();
+            if (u.isEmpty() || p.isEmpty()) {
+                msgLabel.setText("Please enter username and password.");
+                return;
+            }
+            if (DbManager.authenticatePlayer(u, p)) {
+                saveUsername(u);
+                showScreen("HOME");
+            } else {
+                msgLabel.setText("Invalid username or password.");
+            }
+        }
+
+        private void attemptCreate() {
+            String u = nameField.getText().trim();
+            String p = new String(passField.getPassword()).trim();
+            if (u.isEmpty() || p.isEmpty()) {
+                msgLabel.setText("Please enter username and password.");
+                return;
+            }
+            if (DbManager.registerPlayer(u, p)) {
+                saveUsername(u);
+                showScreen("HOME");
+            } else {
+                msgLabel.setText("Username already exists or DB offline.");
+            }
+        }
+    }
+
+    private static class HomePanel extends JPanel {
+        private JLabel scoreLabel;
+        private JLabel coinsLabel;
+        private JLabel gamesLabel;
+        private JLabel titleLabel;
+        private Image bgImage;
+        private Image playerImage;
+
+        public HomePanel() {
+            setPreferredSize(new Dimension(420, 760));
+            setLayout(null);
+            
+            try {
+                bgImage = ImageIO.read(new File("assets/environment/background.png"));
+                playerImage = ImageIO.read(new File("assets/player/player_run (2).png"));
+            } catch (Exception e) {}
+            
+            titleLabel = new JLabel("JavaDash");
+            titleLabel.setFont(new Font("SansSerif", Font.BOLD, 48));
+            titleLabel.setForeground(Color.WHITE);
+            titleLabel.setBounds(100, 50, 250, 60);
+            add(titleLabel);
+
+            JPanel statsPanel = new JPanel();
+            statsPanel.setLayout(new GridLayout(3, 1, 0, 10));
+            statsPanel.setOpaque(false);
+            statsPanel.setBounds(200, 150, 200, 150);
+
+            scoreLabel = new JLabel("Score: 0");
+            scoreLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
+            scoreLabel.setForeground(Color.WHITE);
+            scoreLabel.setOpaque(true);
+            scoreLabel.setBackground(new Color(60, 120, 216, 200));
+            scoreLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+
+            coinsLabel = new JLabel("Coins: 0");
+            coinsLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
+            coinsLabel.setForeground(Color.WHITE);
+            coinsLabel.setOpaque(true);
+            coinsLabel.setBackground(new Color(60, 120, 216, 200));
+            coinsLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+
+            gamesLabel = new JLabel("Games: 0");
+            gamesLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
+            gamesLabel.setForeground(Color.WHITE);
+            gamesLabel.setOpaque(true);
+            gamesLabel.setBackground(new Color(60, 120, 216, 200));
+            gamesLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+
+            statsPanel.add(scoreLabel);
+            statsPanel.add(coinsLabel);
+            statsPanel.add(gamesLabel);
+            add(statsPanel);
+
+            JButton startBtn = new JButton("PLAY");
+            startBtn.setFont(new Font("SansSerif", Font.BOLD, 36));
+            startBtn.setBackground(new Color(112, 196, 255));
+            startBtn.setForeground(Color.WHITE);
+            startBtn.setBounds(90, 600, 240, 70);
+            startBtn.setFocusPainted(false);
+            startBtn.addActionListener(e -> showScreen("GAME"));
+            add(startBtn);
+
+            JButton lbBtn = new JButton("Rankings");
+            lbBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+            lbBtn.setBounds(310, 700, 100, 40);
+            lbBtn.addActionListener(e -> showScreen("LEADERBOARD"));
+            add(lbBtn);
+
+            JButton switchBtn = new JButton("Logout");
+            switchBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+            switchBtn.setBounds(10, 700, 100, 40);
+            switchBtn.addActionListener(e -> {
+                SessionManager.clearSession();
+                currentUsername = null;
+                showScreen("LOGIN");
+            });
+            add(switchBtn);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g;
+            if (bgImage != null) {
+                g2.drawImage(bgImage, 0, 0, 420, 760, null);
+            } else {
+                g2.setColor(new Color(40, 160, 220));
+                g2.fillRect(0, 0, 420, 760);
+            }
+            
+            if (playerImage != null) {
+                g2.drawImage(playerImage, 40, 250, 140, 180, null);
+            }
+        }
+
+        public void refresh() {
+            boolean dbUp = DbManager.test();
+            if (dbUp && currentUsername != null) {
+                PlayerInfo p = DbManager.getPlayer(currentUsername);
+                if (p != null) {
+                    scoreLabel.setText("Best Score: " + p.getBestScore());
+                    coinsLabel.setText("Coins: " + p.getBestCoins());
+                    gamesLabel.setText("Games: " + p.getGamesPlayed());
+                    titleLabel.setText("Hi, " + currentUsername + "!");
+                }
+            } else {
+                scoreLabel.setText("Best Score: N/A");
+                coinsLabel.setText("Coins: N/A");
+                gamesLabel.setText("Offline");
+                titleLabel.setText("Hi, " + currentUsername + "!");
+            }
+        }
+    }
+
+    private static class LeaderboardPanel extends JPanel {
+        private JTable table;
+        private String[] cols = {"Rank", "Player", "Best Score", "Coins", "Games"};
+        private String[][] data = new String[0][5];
+        
+        public LeaderboardPanel() {
+            setPreferredSize(new Dimension(420, 760));
+            setBackground(new Color(12, 18, 30));
+            setLayout(new BorderLayout());
+            
+            JLabel title = new JLabel("LEADERBOARD", SwingConstants.CENTER);
+            title.setFont(new Font("SansSerif", Font.BOLD, 28));
+            title.setForeground(new Color(52, 208, 255));
+            title.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+            add(title, BorderLayout.NORTH);
+            
+            table = new JTable(data, cols);
+            table.setFillsViewportHeight(true);
+            JScrollPane scroll = new JScrollPane(table);
+            add(scroll, BorderLayout.CENTER);
+            
+            JPanel btnPanel = new JPanel();
+            btnPanel.setBackground(new Color(12, 18, 30));
+            JButton backBtn = new JButton("BACK");
+            backBtn.addActionListener(e -> showScreen("HOME"));
+            JButton refreshBtn = new JButton("REFRESH");
+            refreshBtn.addActionListener(e -> refresh());
+            btnPanel.add(backBtn);
+            btnPanel.add(refreshBtn);
+            add(btnPanel, BorderLayout.SOUTH);
+        }
+        
+        public void refresh() {
+            if (!DbManager.test()) return;
+            List<PlayerInfo> top = DbManager.getLeaderboard(20);
+            data = new String[top.size()][5];
+            int highlightRow = -1;
+            for (int i = 0; i < top.size(); i++) {
+                PlayerInfo p = top.get(i);
+                data[i][0] = String.valueOf(i + 1);
+                data[i][1] = p.getUsername();
+                data[i][2] = String.valueOf(p.getBestScore());
+                data[i][3] = String.valueOf(p.getBestCoins());
+                data[i][4] = String.valueOf(p.getGamesPlayed());
+                if (p.getUsername().equals(currentUsername)) highlightRow = i;
+            }
+            table.setModel(new javax.swing.table.DefaultTableModel(data, cols));
+            if (highlightRow != -1) {
+                table.setRowSelectionInterval(highlightRow, highlightRow);
+            }
+        }
     }
 
     private static class GamePanel extends JPanel implements ActionListener {
@@ -61,7 +369,7 @@ public class SimpleRunnerGame extends JFrame {
 
         static {
             playerRunImage = safeLoadImage("assets/player/player_run (2).png");
-            playerRunImage2 = safeLoadImage("assets/player/player_run (2).png"); // Using same run image if we don't have run2
+            playerRunImage2 = safeLoadImage("assets/player/player_run (1)_processed.png");
             playerLeftImage = safeLoadImage("assets/player/player_left (1).png");
             playerRightImage = safeLoadImage("assets/player/player_right (1).png");
             playerJumpImage = safeLoadImage("assets/player/player_jump (1).png");
@@ -146,6 +454,9 @@ public class SimpleRunnerGame extends JFrame {
         private boolean leftPressed = false;
         private boolean rightPressed = false;
         private boolean upPressed = false;
+        
+        private long runStartTime = 0;
+        private String gameOverMessage = "";
 
         public GamePanel() {
             setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -165,13 +476,21 @@ public class SimpleRunnerGame extends JFrame {
 
         // Unified input handling for touch / mouse
         private void handleTouch(int x, int y) {
-            int buttonY = HEIGHT - 86;
-            int buttonSize = 46;
-            if (gameState == GameState.START_MENU) {
-                SoundManager.play("click");
-                resetGame();
+            if (gameState == GameState.GAME_OVER) {
+                // Check PLAY AGAIN button
+                if (x >= 110 && x <= 310 && y >= 450 && y <= 490) {
+                    SoundManager.play("click");
+                    resetGame();
+                }
+                // Check HOME button
+                if (x >= 110 && x <= 310 && y >= 510 && y <= 550) {
+                    SoundManager.play("click");
+                    showScreen("HOME");
+                }
                 return;
             }
+            int buttonY = HEIGHT - 86;
+            int buttonSize = 46;
             if (y < buttonY || y > buttonY + buttonSize || gameState != GameState.PLAYING) {
                 return;
             }
@@ -324,7 +643,7 @@ public class SimpleRunnerGame extends JFrame {
             });
         }
 
-        private void resetGame() {
+        public void resetGame() {
             obstacles.clear();
             coins.clear();
             lifePowerUps.clear();
@@ -352,6 +671,8 @@ public class SimpleRunnerGame extends JFrame {
             lastSpawnedLane = 1;
             consecutiveLaneCount = 0;
             lastTime = System.nanoTime();
+            runStartTime = System.currentTimeMillis();
+            gameOverMessage = "";
             SoundManager.loop("music");
         }
 
@@ -649,6 +970,38 @@ public class SimpleRunnerGame extends JFrame {
                             shakeIntensity = 8.0;
                             floatingTexts.add(new FloatingText(player.getX() - 4, player.getY() - 12, "CRASH!", new Color(255, 60, 60), 1.2));
                             for (int i=0; i<15; i++) particles.add(new Particle(player.getX()+20, player.getY()+20, (random.nextDouble()-0.5)*200, (random.nextDouble()-0.5)*200, new Color(255,80,80), 8, 0.6));
+                            
+                            gameOverMessage = "Saving score...";
+                            final long finalScore = score;
+                            final int finalCoins = coinsCollected;
+                            final int finalDistance = distance;
+                            final int duration = (int)(System.currentTimeMillis() - runStartTime);
+                            PlayerInfo prevInfo = DbManager.getPlayer(currentUsername);
+                            final int oldBest = (prevInfo != null) ? prevInfo.getBestScore() : 0;
+                            
+                            new SwingWorker<Boolean, Void>() {
+                                @Override
+                                protected Boolean doInBackground() {
+                                    return DbManager.submitScore(currentUsername, (int)finalScore, finalCoins, finalDistance, duration);
+                                }
+                                @Override
+                                protected void done() {
+                                    try {
+                                        boolean success = get();
+                                        if (success) {
+                                            if (finalScore > oldBest) {
+                                                gameOverMessage = "New personal best!";
+                                            } else {
+                                                gameOverMessage = "Score saved!";
+                                            }
+                                        } else {
+                                            gameOverMessage = "Score not saved (DB offline)";
+                                        }
+                                    } catch (Exception e) {
+                                        gameOverMessage = "Score not saved (Error)";
+                                    }
+                                }
+                            }.execute();
                         }
                         break;
                     }
@@ -739,9 +1092,7 @@ public class SimpleRunnerGame extends JFrame {
                 drawDebugOverlay(g2);
             }
 
-            if (gameState == GameState.START_MENU) {
-                drawStartMenuOverlay(g2);
-            } else if (gameState == GameState.GAME_OVER) {
+            if (gameState == GameState.GAME_OVER) {
                 drawGameOverOverlay(g2);
             } else if (gameState == GameState.PAUSED) {
                 drawPausedOverlay(g2);
@@ -1069,9 +1420,28 @@ public class SimpleRunnerGame extends JFrame {
             g2.setFont(new Font("SansSerif", Font.PLAIN, 15));
             drawCenteredText(g2, "Coins: " + coinsCollected + "  |  Distance: " + distance + "m", 380);
 
+            if (!gameOverMessage.isEmpty()) {
+                if (gameOverMessage.contains("not saved")) {
+                    g2.setColor(new Color(255, 100, 100));
+                } else if (gameOverMessage.contains("best")) {
+                    g2.setColor(new Color(112, 255, 112));
+                } else {
+                    g2.setColor(new Color(150, 150, 150));
+                }
+                g2.setFont(new Font("SansSerif", Font.BOLD, 14));
+                drawCenteredText(g2, gameOverMessage, 410);
+            }
+
             g2.setColor(new Color(112, 196, 255));
+            g2.fillRoundRect(110, 450, 200, 40, 20, 20);
+            g2.setColor(Color.WHITE);
             g2.setFont(new Font("SansSerif", Font.BOLD, 16));
-            drawCenteredText(g2, "Press 'R' to Restart", 420);
+            drawCenteredText(g2, "PLAY AGAIN", 475);
+
+            g2.setColor(new Color(100, 100, 100));
+            g2.fillRoundRect(110, 510, 200, 40, 20, 20);
+            g2.setColor(Color.WHITE);
+            drawCenteredText(g2, "HOME", 535);
         }
 
         private void drawPausedOverlay(Graphics2D g2) {
