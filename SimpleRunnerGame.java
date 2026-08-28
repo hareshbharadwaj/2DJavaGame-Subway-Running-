@@ -7,6 +7,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import javax.swing.*;
+import javax.imageio.ImageIO;
+import java.io.File;
+import java.awt.Image;
 
 public class SimpleRunnerGame extends JFrame {
     public SimpleRunnerGame() {
@@ -33,16 +36,68 @@ public class SimpleRunnerGame extends JFrame {
             GAME_OVER
         }
 
+        private static Image playerRunImage;
+        private static Image playerRunImage2;
+        private static Image playerLeftImage;
+        private static Image playerRightImage;
+        private static Image playerJumpImage;
+        
+        private static Image[] bgLeftImages = new Image[4];
+        private static Image[] bgRightImages = new Image[4];
+        private static Image roadImage;
+        private static Image[] obstacleImages = new Image[9];
+        private static Image[] coinImages = new Image[8];
+        private static Image heartImage;
+        private static Image shieldImage;
+        private static Image magnetImage;
+
+        private static Image safeLoadImage(String path) {
+            try {
+                File f = new File(path);
+                if (f.exists()) return ImageIO.read(f);
+            } catch (Exception e) {}
+            return null;
+        }
+
+        static {
+            playerRunImage = safeLoadImage("assets/player/player_run (2).png");
+            playerRunImage2 = safeLoadImage("assets/player/player_run (2).png"); // Using same run image if we don't have run2
+            playerLeftImage = safeLoadImage("assets/player/player_left (1).png");
+            playerRightImage = safeLoadImage("assets/player/player_right (1).png");
+            playerJumpImage = safeLoadImage("assets/player/player_jump (1).png");
+            
+            for(int i = 0; i < 4; i++) {
+                bgLeftImages[i] = safeLoadImage("assets/environment/background.png");
+                bgRightImages[i] = safeLoadImage("assets/environment/background.png");
+            }
+            roadImage = safeLoadImage("assets/environment/road (1).png");
+            
+            String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_blue (1)", "car_red (1)", "car_taxi (1)", "cone (1)", "barrier (1)", "truck (1)"};
+            for(int i = 0; i < obsNames.length; i++) {
+                obstacleImages[i] = safeLoadImage("assets/obstacles/" + obsNames[i] + ".png");
+                if (obstacleImages[i] == null) {
+                    obstacleImages[i] = safeLoadImage("assets/obstacles/barrier (1).png");
+                }
+            }
+            
+            for(int i = 0; i < 8; i++) {
+                coinImages[i] = safeLoadImage("assets/collectibles/coin" + (i+1) + ".png");
+            }
+            heartImage = safeLoadImage("assets/ui/heart (1).png");
+            shieldImage = safeLoadImage("assets/ui/shield (1).png");
+            magnetImage = safeLoadImage("assets/ui/magnet (1).png");
+        }
+
         private static final int WIDTH = 420;
         private static final int HEIGHT = 760;
-        private static final int ROAD_X = 50;
-        private static final int ROAD_Y = 92;
-        private static final int ROAD_W = 320;
-        private static final int ROAD_H = 560;
-        private static final int[] LANE_X = {105, 185, 265};
+        private static final int ROAD_X = 90;
+        private static final int ROAD_Y = 24;
+        private static final int ROAD_W = 240;
+        private static final int ROAD_H = 712; // HEIGHT - 48
+        private static final int[] LANE_X = {108, 188, 268};
         private static final int PLAYER_WIDTH = 44;
         private static final int PLAYER_HEIGHT = 56;
-        private static final double GROUND_Y = ROAD_Y + ROAD_H - 92.0; // 560.0
+        private static final double GROUND_Y = 24 + 712 - 92.0;
         private static final double GRAVITY = 2200.0; // px/s^2
         private static final double JUMP_STRENGTH = 700.0; // px/s, yields ~111px apex & ~0.63s jump
         private static final double MAX_JUMP_APEX = (JUMP_STRENGTH * JUMP_STRENGTH) / (2.0 * GRAVITY);
@@ -57,6 +112,7 @@ public class SimpleRunnerGame extends JFrame {
         private final List<Obstacle> obstacles = new ArrayList<>();
         private final List<Coin> coins = new ArrayList<>();
         private final List<LifePowerUp> lifePowerUps = new ArrayList<>();
+        private final List<PowerUp> powerUps = new ArrayList<>();
         private final List<FloatingText> floatingTexts = new ArrayList<>();
         private final List<Particle> particles = new ArrayList<>();
         private final Random random = new Random();
@@ -73,6 +129,9 @@ public class SimpleRunnerGame extends JFrame {
         private double runCycleTime = 0.0;
         private double scoreAccumulator = 0.0;
         private double distanceAccumulator = 0.0;
+        
+        private double shieldTimer = 0.0;
+        private double magnetTimer = 0.0;
 
         private long score = 0;
         private int coinsCollected = 0;
@@ -99,6 +158,8 @@ public class SimpleRunnerGame extends JFrame {
                     handleTouch(e.getX(), e.getY());
                 }
             });
+            SoundManager.loadAll();
+            SoundManager.loop("music");
             timer.start();
         }
 
@@ -107,6 +168,7 @@ public class SimpleRunnerGame extends JFrame {
             int buttonY = HEIGHT - 86;
             int buttonSize = 46;
             if (gameState == GameState.START_MENU) {
+                SoundManager.play("click");
                 resetGame();
                 return;
             }
@@ -136,11 +198,13 @@ public class SimpleRunnerGame extends JFrame {
 
         public void jump() {
             if (gameState == GameState.START_MENU) {
+                SoundManager.play("click");
                 resetGame();
                 return;
             }
             if (gameState == GameState.PLAYING) {
                 player.jump();
+                SoundManager.play("jump");
             }
         }
 
@@ -155,6 +219,7 @@ public class SimpleRunnerGame extends JFrame {
 
         public void restartGame() {
             if (gameState == GameState.GAME_OVER) {
+                SoundManager.play("click");
                 resetGame();
             }
         }
@@ -173,6 +238,7 @@ public class SimpleRunnerGame extends JFrame {
             inputMap.put(KeyStroke.getKeyStroke("pressed P"), "pause");
             inputMap.put(KeyStroke.getKeyStroke("pressed R"), "restart");
             inputMap.put(KeyStroke.getKeyStroke("pressed F3"), "toggleDebug");
+            inputMap.put(KeyStroke.getKeyStroke("pressed M"), "toggleMute");
 
             inputMap.put(KeyStroke.getKeyStroke("released A"), "laneLeftRelease");
             inputMap.put(KeyStroke.getKeyStroke("released LEFT"), "laneLeftRelease");
@@ -250,12 +316,19 @@ public class SimpleRunnerGame extends JFrame {
                     debugMode = !debugMode;
                 }
             });
+            actionMap.put("toggleMute", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    SoundManager.toggleMute();
+                }
+            });
         }
 
         private void resetGame() {
             obstacles.clear();
             coins.clear();
             lifePowerUps.clear();
+            powerUps.clear();
             floatingTexts.clear();
             particles.clear();
             player.reset();
@@ -274,9 +347,12 @@ public class SimpleRunnerGame extends JFrame {
             roadScroll = 0.0;
             scoreAccumulator = 0.0;
             distanceAccumulator = 0.0;
+            shieldTimer = 0.0;
+            magnetTimer = 0.0;
             lastSpawnedLane = 1;
             consecutiveLaneCount = 0;
             lastTime = System.nanoTime();
+            SoundManager.loop("music");
         }
 
         @Override
@@ -302,10 +378,10 @@ public class SimpleRunnerGame extends JFrame {
         }
 
         private void updateGame(double deltaTime) {
-            // Difficulty scaling: speed increases from 300 to 560 px/s based on distance
-            obstacleSpeed = Math.min(MAX_SPEED, INITIAL_SPEED + distance * 0.25);
-            // Spawn interval decreases smoothly from 0.85s down to a fair floor of 0.42s
-            spawnInterval = Math.max(0.42, 0.85 - (distance * 0.00035));
+            // Difficulty scaling: speed increases progressively based on distance
+            obstacleSpeed = Math.min(650.0, INITIAL_SPEED + distance * 0.4);
+            // Spawn interval decreases smoothly down to a fair floor of 0.38s
+            spawnInterval = Math.max(0.38, 0.85 - (distance * 0.0005));
 
             // Road scroll (delta-time based)
             roadScroll += obstacleSpeed * deltaTime;
@@ -317,6 +393,8 @@ public class SimpleRunnerGame extends JFrame {
             if (screenShakeTimer > 0.0) {
                 screenShakeTimer = Math.max(0.0, screenShakeTimer - deltaTime);
             }
+            if (shieldTimer > 0.0) shieldTimer = Math.max(0.0, shieldTimer - deltaTime);
+            if (magnetTimer > 0.0) magnetTimer = Math.max(0.0, magnetTimer - deltaTime);
 
             // Real distance accumulation (time & speed based, not frame-rate dependent)
             distanceAccumulator += (obstacleSpeed * 0.02) * deltaTime;
@@ -352,6 +430,7 @@ public class SimpleRunnerGame extends JFrame {
             updateObstacles(deltaTime);
             updateCoins(deltaTime);
             updateLifePowerUps(deltaTime);
+            updatePowerUps(deltaTime);
             updateFloatingTexts(deltaTime);
             checkCollisions();
         }
@@ -379,7 +458,37 @@ public class SimpleRunnerGame extends JFrame {
             // Ensure obstacle stays strictly inside road boundaries
             double obsX = LANE_X[lane];
             obsX = Math.max(ROAD_X + 10, Math.min(ROAD_X + ROAD_W - 54, obsX));
-            obstacles.add(new Obstacle(obsX, spawnY, lane, obsHeight));
+            int obsType = random.nextInt(9); // 0 to 8
+            
+            double w = 44.0;
+            double h = obsHeight;
+            if (obstacleImages[obsType] != null) {
+                int imgW = obstacleImages[obsType] != null ? obstacleImages[obsType].getWidth(null) : 40;
+                int imgH = obstacleImages[obsType] != null ? obstacleImages[obsType].getHeight(null) : 40;
+                if (imgW > 0 && imgH > 0) {
+                    // Apply a constant scale factor to all obstacles to preserve their relative sizes
+                    double scale = 0.35; // Adjust this if they are too big/small globally
+                    w = imgW * scale;
+                    h = imgH * scale;
+                    
+                    // Cap width just in case it's still too large for the lane
+                    if (w > 70.0) {
+                        scale = 70.0 / imgW;
+                        w = 70.0;
+                        h = imgH * scale;
+                    }
+                }
+            }
+            
+            // Adjust spawn Y so the obstacle rests on the spawn line correctly
+            double adjustedSpawnY = ROAD_Y - h - 12.0;
+            
+            // Center the obstacle in the lane properly
+            int laneWidth = ROAD_W / 3;
+            double laneCenter = ROAD_X + (lane * laneWidth) + (laneWidth / 2.0);
+            double centeredX = laneCenter - (w / 2.0);
+            
+            obstacles.add(new Obstacle(centeredX, adjustedSpawnY, lane, w, h, obsType));
 
             // Coin Generation (55% chance)
             if (random.nextInt(100) < 55) {
@@ -398,14 +507,21 @@ public class SimpleRunnerGame extends JFrame {
                 }
             }
 
-            // Life Power-Up Generation (15% chance, only spawned when lives < MAX_LIVES)
-            if (lives < MAX_LIVES && random.nextInt(100) < 15) {
-                // Pick a lane different from obstacle
+            // Life Power-Up Generation (10% chance)
+            if (lives < MAX_LIVES && random.nextInt(100) < 10) {
                 int lifeLane = (lane + 1 + random.nextInt(2)) % 3;
                 double lifeX = LANE_X[lifeLane] + 11.0;
-                // Prevent exact overlap with ground coins
                 double lifeY = spawnY - 26.0;
                 lifePowerUps.add(new LifePowerUp(lifeX, lifeY, lifeLane));
+            }
+            
+            // Shield or Magnet Generation (10% chance total)
+            if (random.nextInt(100) < 10) {
+                int puLane = (lane + 1 + random.nextInt(2)) % 3;
+                double puX = LANE_X[puLane] + 11.0;
+                double puY = spawnY - 26.0;
+                PowerUp.Type type = random.nextBoolean() ? PowerUp.Type.SHIELD : PowerUp.Type.MAGNET;
+                powerUps.add(new PowerUp(puX, puY, puLane, type));
             }
         }
 
@@ -432,7 +548,18 @@ public class SimpleRunnerGame extends JFrame {
             Iterator<Coin> iterator = coins.iterator();
             while (iterator.hasNext()) {
                 Coin coin = iterator.next();
-                coin.update(deltaTime, obstacleSpeed);
+                if (magnetTimer > 0.0 && coin.getY() > 0 && coin.getY() < HEIGHT) {
+                    double pCenterX = player.getX() + PLAYER_WIDTH / 2.0;
+                    double cCenterX = coin.getX() + coin.getSize() / 2.0;
+                    double dirX = pCenterX - cCenterX;
+                    double dirY = (player.getY() + PLAYER_HEIGHT / 2.0) - (coin.getY() + coin.getSize() / 2.0);
+                    double dist = Math.sqrt(dirX * dirX + dirY * dirY);
+                    if (dist > 5.0 && dist < 300.0) { // Only pull if reasonably close
+                        coin.setX(coin.getX() + (dirX / dist) * 400.0 * deltaTime);
+                        coin.setY(coin.getY() + (dirY / dist) * 400.0 * deltaTime);
+                    }
+                }
+                coin.update(deltaTime, magnetTimer > 0.0 ? obstacleSpeed * 0.5 : obstacleSpeed);
                 if (coin.isOffScreen()) {
                     iterator.remove();
                 }
@@ -445,6 +572,16 @@ public class SimpleRunnerGame extends JFrame {
                 LifePowerUp lifePowerUp = iterator.next();
                 lifePowerUp.update(deltaTime, obstacleSpeed);
                 if (lifePowerUp.isOffScreen()) {
+                    iterator.remove();
+                }
+            }
+        }
+        private void updatePowerUps(double deltaTime) {
+            Iterator<PowerUp> iterator = powerUps.iterator();
+            while (iterator.hasNext()) {
+                PowerUp pu = iterator.next();
+                pu.update(deltaTime, obstacleSpeed);
+                if (pu.isOffScreen()) {
                     iterator.remove();
                 }
             }
@@ -479,16 +616,26 @@ public class SimpleRunnerGame extends JFrame {
                 while (iterator.hasNext()) {
                     Obstacle obstacle = iterator.next();
                     if (!obstacle.isHit() && playerHitbox.intersects(obstacle.getHitbox())) {
-                        double heightAboveGround = GROUND_Y - player.getY();
-                        // If player is high enough, they successfully jump over
-                        if (heightAboveGround > 30.0) {
-                            continue;
+                        // Types: 0: barrel, 1: barrier, 6: cone, 7: pothole are jumpable. Vehicles (2,3,4,5,8) are not.
+                        int type = obstacle.getType();
+                        boolean isJumpable = (type == 0 || type == 1 || type == 6 || type == 7);
+                        
+                        if (isJumpable) {
+                            double heightAboveGround = GROUND_Y - player.getY();
+                            if (heightAboveGround > 30.0) {
+                                continue; // successfully jumped over
+                            }
                         }
 
                         obstacle.setHit(true);
                         iterator.remove(); // Remove immediately to prevent duplicate collision
 
-                        if (lives > 0) {
+                        SoundManager.play("crash");
+                        if (shieldTimer > 0.0) {
+                            shieldTimer = 0.0; // Consume shield
+                            floatingTexts.add(new FloatingText(player.getX(), player.getY() - 12, "SHIELD BLOCK!", new Color(112, 196, 255), 1.0));
+                            for (int i=0; i<15; i++) particles.add(new Particle(player.getX()+20, player.getY()+20, (random.nextDouble()-0.5)*150, (random.nextDouble()-0.5)*150, new Color(112,196,255), 8, 0.6));
+                        } else if (lives > 0) {
                             lives--;
                             invincibilityTimer = 1.2; // 1.2s invulnerability frames
                             screenShakeTimer = 0.28;
@@ -496,6 +643,8 @@ public class SimpleRunnerGame extends JFrame {
                             floatingTexts.add(new FloatingText(player.getX() + 4, player.getY() - 12, "-1 LIFE", new Color(255, 90, 90), 0.9));
                         } else {
                             gameState = GameState.GAME_OVER;
+                            SoundManager.stop("music");
+                            SoundManager.play("gameover");
                             screenShakeTimer = 0.4;
                             shakeIntensity = 8.0;
                             floatingTexts.add(new FloatingText(player.getX() - 4, player.getY() - 12, "CRASH!", new Color(255, 60, 60), 1.2));
@@ -512,6 +661,7 @@ public class SimpleRunnerGame extends JFrame {
                 Coin coin = coinIterator.next();
                 if (playerHitbox.intersects(coin.getHitbox())) {
                     coinsCollected++;
+                    SoundManager.play("coin");
                     score += 120;
                     floatingTexts.add(new FloatingText(coin.getX() - 2, coin.getY() - 8, "+120", new Color(255, 234, 90), 0.7));
                     for (int i=0; i<6; i++) particles.add(new Particle(coin.getX()+8, coin.getY()+8, (random.nextDouble()-0.5)*100, (random.nextDouble()-0.5)*100, new Color(255,234,90), 6, 0.5));
@@ -519,6 +669,25 @@ public class SimpleRunnerGame extends JFrame {
                 }
             }
 
+            // Shield/Magnet collection
+            Iterator<PowerUp> puIterator = powerUps.iterator();
+            while (puIterator.hasNext()) {
+                PowerUp pu = puIterator.next();
+                if (playerHitbox.intersects(pu.getHitbox())) {
+                    SoundManager.play("powerup");
+                    if (pu.getType() == PowerUp.Type.SHIELD) {
+                        shieldTimer = 10.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "SHIELD!", new Color(112, 196, 255), 0.8));
+                    } else if (pu.getType() == PowerUp.Type.MAGNET) {
+                        magnetTimer = 10.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "MAGNET!", new Color(255, 150, 50), 0.8));
+                    }
+                    score += 50;
+                    for (int i=0; i<8; i++) particles.add(new Particle(pu.getX()+10, pu.getY()+10, (random.nextDouble()-0.5)*120, (random.nextDouble()-0.5)*120, Color.WHITE, 6, 0.5));
+                    puIterator.remove();
+                }
+            }
+            
             // Life power-up collection
             Iterator<LifePowerUp> lifeIterator = lifePowerUps.iterator();
             while (lifeIterator.hasNext()) {
@@ -553,16 +722,18 @@ public class SimpleRunnerGame extends JFrame {
 
             drawBackground(g2);
             drawPhoneFrame(g2);
+            drawSidewalks(g2);
             drawRoad(g2);
             drawHeader(g2);
             drawObstacles(g2);
             drawCoins(g2);
             drawLifePowerUps(g2);
+            drawPowerUps(g2);
             drawPlayer(g2);
             drawFloatingTexts(g2);
             drawParticles(g2);
             drawFooter(g2);
-            drawMobileControls(g2);
+            // drawMobileControls removed
 
             if (debugMode) {
                 drawDebugOverlay(g2);
@@ -602,29 +773,37 @@ public class SimpleRunnerGame extends JFrame {
 
         
         private void drawBackground(Graphics2D g2) {
-            // Sky gradient
+            // Sky gradient or dark fill
             GradientPaint sky = new GradientPaint(0, 0, new Color(10, 14, 26), 0, HEIGHT, new Color(20, 26, 46));
             g2.setPaint(sky);
             g2.fillRect(0, 0, WIDTH, HEIGHT);
-
-            // Parallax Cityscape
-            g2.setColor(new Color(16, 20, 34));
-            int layer1Scroll = (int)(distanceAccumulator * 1.5) % 800;
-            for (int i = -1; i < 3; i++) {
-                int baseX = i * 200 - (layer1Scroll % 200);
-                g2.fillRect(baseX + 20, 80, 40, HEIGHT);
-                g2.fillRect(baseX + 70, 140, 50, HEIGHT);
-                g2.fillRect(baseX + 130, 50, 30, HEIGHT);
-            }
+        }
+        
+        private void drawSidewalks(Graphics2D g2) {
+            int bgHeight = 760;
+            int bgScroll = (int)(distanceAccumulator * 1.5) % (bgHeight * 4);
             
-            g2.setColor(new Color(24, 30, 48));
-            int layer2Scroll = (int)(distanceAccumulator * 3.0) % 800;
-            for (int i = -1; i < 3; i++) {
-                int baseX = i * 200 - (layer2Scroll % 200);
-                g2.fillRect(baseX + 10, 160, 60, HEIGHT);
-                g2.fillRect(baseX + 90, 110, 40, HEIGHT);
-                g2.fillRect(baseX + 150, 200, 35, HEIGHT);
+            int leftSidewalkX = 24;
+            int rightSidewalkX = ROAD_X + ROAD_W;
+            int sidewalkWidth = ROAD_X - 24; // 90 - 24 = 66
+            
+            Graphics2D g2Clip = (Graphics2D) g2.create();
+            // Clip to phone screen
+            g2Clip.setClip(new RoundRectangle2D.Double(24, 24, WIDTH - 48, HEIGHT - 48, 50, 50));
+            
+            for (int i = -1; i < 5; i++) {
+                int drawY = i * bgHeight + (bgScroll % bgHeight);
+                int bgIndex = (int)((distanceAccumulator * 1.5 + i * bgHeight) / bgHeight) % 4;
+                if (bgIndex < 0) bgIndex += 4;
+                
+                if (bgLeftImages[bgIndex] != null) {
+                    g2Clip.drawImage(bgLeftImages[bgIndex], leftSidewalkX, drawY, sidewalkWidth, bgHeight, null); 
+                }
+                if (bgRightImages[bgIndex] != null) {
+                    g2Clip.drawImage(bgRightImages[bgIndex], rightSidewalkX, drawY, sidewalkWidth, bgHeight, null); 
+                }
             }
+            g2Clip.dispose();
         }
 
         private void drawPhoneFrame(Graphics2D g2) {
@@ -641,31 +820,35 @@ public class SimpleRunnerGame extends JFrame {
         }
 
         private void drawRoad(Graphics2D g2) {
-            RoundRectangle2D road = new RoundRectangle2D.Double(ROAD_X, ROAD_Y, ROAD_W, ROAD_H, 28, 28);
-            g2.setColor(new Color(30, 42, 76));
-            g2.fill(road);
-            g2.setColor(new Color(255, 255, 255, 40));
-            g2.setStroke(new BasicStroke(3f));
-            g2.draw(road);
-
-            int roadDashOffset = (int) (roadScroll % 28);
-            g2.setColor(new Color(255, 255, 255, 80));
-            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 0, new float[]{14, 14}, roadDashOffset));
-            int laneWidth = ROAD_W / 3;
-            g2.drawLine(ROAD_X + laneWidth, ROAD_Y + 18, ROAD_X + laneWidth, ROAD_Y + ROAD_H - 18);
-            g2.drawLine(ROAD_X + laneWidth * 2, ROAD_Y + 18, ROAD_X + laneWidth * 2, ROAD_Y + ROAD_H - 18);
-
-            g2.setStroke(new BasicStroke(1f));
-            for (int lane = 0; lane < 3; lane++) {
-                int x = LANE_X[lane] + PLAYER_WIDTH / 2;
-                g2.setColor(new Color(255, 255, 255, 16));
-                g2.fillRect(x, ROAD_Y + 12, 4, ROAD_H - 24);
-            }
-
-            g2.setColor(new Color(255, 255, 255, 20));
-            for (int i = 0; i < 18; i++) {
-                int x = ROAD_X + 28 + i * 22 + (roadDashOffset % 22);
-                g2.fillRect(x, ROAD_Y + ROAD_H - 30, 14, 4);
+            // The road texture is for 1 lane, so we draw it 3 times side by side
+            if (roadImage != null) {
+                int rH = roadImage != null ? roadImage.getHeight(null) : 1024;
+                int rW = roadImage != null ? roadImage.getWidth(null) : 512;
+                
+                int laneWidth = ROAD_W / 3;
+                int scaledH = (int)((double)laneWidth / rW * rH);
+                if(scaledH <= 0) scaledH = rH;
+                
+                int scrollOff = (int) (roadScroll % scaledH);
+                Graphics2D g2Clip = (Graphics2D) g2.create();
+                RoundRectangle2D roadClip = new RoundRectangle2D.Double(ROAD_X, ROAD_Y, ROAD_W, ROAD_H, 28, 28);
+                g2Clip.setClip(roadClip);
+                
+                for(int y = ROAD_Y - scaledH + scrollOff; y < ROAD_Y + ROAD_H; y += scaledH) {
+                    g2Clip.drawImage(roadImage, ROAD_X, y, laneWidth, scaledH, null);
+                    g2Clip.drawImage(roadImage, ROAD_X + laneWidth, y, laneWidth, scaledH, null);
+                    g2Clip.drawImage(roadImage, ROAD_X + laneWidth * 2, y, laneWidth, scaledH, null);
+                }
+                
+                // Add soft overlay edge for phone frame blend
+                g2Clip.setColor(new Color(255, 255, 255, 40));
+                g2Clip.setStroke(new BasicStroke(3f));
+                g2Clip.draw(roadClip);
+                g2Clip.dispose();
+            } else {
+                RoundRectangle2D road = new RoundRectangle2D.Double(ROAD_X, ROAD_Y, ROAD_W, ROAD_H, 28, 28);
+                g2.setColor(new Color(30, 42, 76));
+                g2.fill(road);
             }
         }
 
@@ -680,7 +863,30 @@ public class SimpleRunnerGame extends JFrame {
 
             // Lives counter with hearts
             g2.setColor(new Color(255, 100, 130));
-            g2.drawString("❤️ " + lives, 326, 34);
+            if (heartImage != null) {
+                g2.drawImage(heartImage, 310, 20, 16, 16, null);
+                g2.drawString("x" + lives, 330, 34);
+            } else {
+                g2.drawString("❤️ " + lives, 326, 34);
+            }
+            
+            // Draw Timers for Shield & Magnet
+            int timerY = 60;
+            if (shieldTimer > 0.0) {
+                if (shieldImage != null) g2.drawImage(shieldImage, WIDTH - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(112, 196, 255));
+                g2.fillRect(WIDTH - 100, timerY + 6, (int)((shieldTimer/10.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(WIDTH - 100, timerY + 6, 70, 8);
+                timerY += 30;
+            }
+            if (magnetTimer > 0.0) {
+                if (magnetImage != null) g2.drawImage(magnetImage, WIDTH - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(255, 150, 50));
+                g2.fillRect(WIDTH - 100, timerY + 6, (int)((magnetTimer/10.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(WIDTH - 100, timerY + 6, 70, 8);
+            }
         }
 
         private void drawPlayer(Graphics2D g2) {
@@ -720,29 +926,26 @@ public class SimpleRunnerGame extends JFrame {
             int drawX = -PLAYER_WIDTH / 2;
             int drawY = -PLAYER_HEIGHT;
 
-            // Player body
-            playerG2.setColor(new Color(52, 208, 255));
-            playerG2.fillRoundRect(drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, 10, 10);
-
-            // Highlights & Face
-            playerG2.setColor(new Color(255, 255, 255));
-            playerG2.fillOval(drawX + 8, drawY + 6, 16, 16);
-            playerG2.setColor(new Color(32, 40, 62));
-            playerG2.fillOval(drawX + 14, drawY + 10, 5, 5);
-
-            // Tie / Accent
-            playerG2.setColor(new Color(255, 114, 114));
-            playerG2.fillRect(drawX + 7, drawY + 26, 20, 12);
-
+            Image imgToDraw = playerRunImage;
+            if (player.isOnGround() && Math.sin(runCycleTime * 0.04) > 0) {
+                imgToDraw = playerRunImage2;
+            }
             
-            // Run cycle feet
-            if (player.isOnGround()) {
-                double footCycle = Math.sin(runCycleTime * 0.04);
-                int leftFootY = drawY + PLAYER_HEIGHT + (int)(footCycle * 6);
-                int rightFootY = drawY + PLAYER_HEIGHT + (int)(-footCycle * 6);
-                playerG2.setColor(new Color(30, 150, 200));
-                playerG2.fillRoundRect(drawX + 6, leftFootY, 12, 8, 4, 4);
-                playerG2.fillRoundRect(drawX + 26, rightFootY, 12, 8, 4, 4);
+            double targetX = LANE_X[player.getLane()];
+            if (!player.isOnGround()) {
+                imgToDraw = playerJumpImage;
+            } else if (player.getX() < targetX - 1.0) {
+                imgToDraw = playerLeftImage;
+            } else if (player.getX() > targetX + 1.0) {
+                imgToDraw = playerRightImage;
+            }
+
+            if (imgToDraw != null) {
+                playerG2.drawImage(imgToDraw, drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, null);
+            } else {
+                // Fallback drawing if images fail to load
+                playerG2.setColor(new Color(52, 208, 255));
+                playerG2.fillRoundRect(drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, 10, 10);
             }
             
             playerG2.dispose();
@@ -756,23 +959,16 @@ public class SimpleRunnerGame extends JFrame {
                 int y = (int) obstacle.getY();
                 int w = (int) obstacle.getWidth();
                 int h = (int) obstacle.getHeight();
-
-                // Base block
-                g2.setColor(new Color(240, 60, 60));
-                g2.fillRoundRect(x, y, w, h, 6, 6);
                 
-                // Warning stripes
-                g2.setColor(new Color(255, 200, 40));
-                Graphics2D obsG2 = (Graphics2D) g2.create();
-                obsG2.setClip(new RoundRectangle2D.Double(x, y, w, h, 6, 6));
-                for(int i=-w; i<w+h; i+=12) {
-                    obsG2.fillPolygon(new int[]{x+i, x+i+6, x+i+6-h, x+i-h}, new int[]{y, y, y+h, y+h}, 4);
+                Image obsImg = obstacleImages[obstacle.getType()];
+                if (obsImg != null) {
+                    // Draw centered if original width differs
+                    g2.drawImage(obsImg, x, y, w, h, null);
+                } else {
+                    // Fallback Base block
+                    g2.setColor(new Color(240, 60, 60));
+                    g2.fillRoundRect(x, y, w, h, 6, 6);
                 }
-                obsG2.dispose();
-                
-                // Top highlight
-                g2.setColor(new Color(255, 255, 255, 120));
-                g2.fillRect(x + 2, y + 2, w - 4, 3);
             }
         }
 
@@ -782,15 +978,12 @@ public class SimpleRunnerGame extends JFrame {
                 int y = (int) coin.getY();
                 int size = (int) coin.getSize();
                 
-                double spin = Math.abs(Math.sin((distanceAccumulator + coin.hashCode()) * 0.015));
-                int spinWidth = (int)(size * Math.max(0.1, spin));
-                int offsetX = (size - spinWidth) / 2;
-
-                g2.setColor(new Color(242, 206, 80));
-                g2.fillOval(x + offsetX, y, spinWidth, size);
-                g2.setColor(new Color(255, 255, 255, 210));
-                if (spinWidth > size * 0.4) {
-                    g2.fillOval(x + offsetX + spinWidth/4, y + size/4, spinWidth/2, size/2);
+                int coinIndex = (int) (((System.currentTimeMillis() / 100) + Math.abs(coin.hashCode() % 8)) % 8);
+                if (coinImages[coinIndex] != null) {
+                    g2.drawImage(coinImages[coinIndex], x, y, size, size, null);
+                } else {
+                    g2.setColor(new Color(242, 206, 80));
+                    g2.fillOval(x, y, size, size);
                 }
             }
         }
@@ -802,10 +995,24 @@ public class SimpleRunnerGame extends JFrame {
                 int size = (int) lifePowerUp.getSize();
 
                 g2.setColor(new Color(255, 92, 132));
-                g2.fillOval(x, y, size, size);
+                if(heartImage!=null) g2.drawImage(heartImage,x,y,size,size,null); else g2.fillOval(x, y, size, size);
                 g2.setColor(Color.WHITE);
                 g2.setFont(new Font("SansSerif", Font.BOLD, 14));
                 g2.drawString("+", x + 6, y + 16);
+            }
+        }
+        private void drawPowerUps(Graphics2D g2) {
+            for (PowerUp pu : powerUps) {
+                int x = (int) pu.getX();
+                int y = (int) pu.getY();
+                int size = (int) pu.getSize();
+                Image img = (pu.getType() == PowerUp.Type.SHIELD) ? shieldImage : magnetImage;
+                if (img != null) {
+                    g2.drawImage(img, x, y, size, size, null);
+                } else {
+                    g2.setColor(Color.WHITE);
+                    g2.fillOval(x, y, size, size);
+                }
             }
         }
 
@@ -1041,6 +1248,8 @@ public class SimpleRunnerGame extends JFrame {
                 onGround = true;
             }
 
+            void setX(double x) { this.x = x; }
+            void setY(double y) { this.y = y; }
             double getX() {
                 return x;
             }
@@ -1086,17 +1295,22 @@ public class SimpleRunnerGame extends JFrame {
             private final double x;
             private double y;
             private final int lane;
-            private final double width = 44.0;
+            private final double width;
             private final double height;
+            private final int type;
             private boolean hit = false;
             private boolean passed = false;
 
-            Obstacle(double startX, double startY, int lane, double obstacleHeight) {
+            Obstacle(double startX, double startY, int lane, double w, double h, int type) {
                 this.x = startX;
                 this.y = startY;
                 this.lane = lane;
-                this.height = obstacleHeight;
+                this.width = w;
+                this.height = h;
+                this.type = type;
             }
+            
+            int getType() { return type; }
 
             void update(double deltaTime, double speed) {
                 y += speed * deltaTime;
@@ -1190,8 +1404,38 @@ public class SimpleRunnerGame extends JFrame {
             }
         }
 
-        private static class Coin {
+        private static class PowerUp {
+            enum Type { SHIELD, MAGNET }
             private final double x;
+            private double y;
+            private final int lane;
+            private final double size = 26.0;
+            private final Type type;
+
+            PowerUp(double startX, double startY, int lane, Type type) {
+                this.x = startX;
+                this.y = startY;
+                this.lane = lane;
+                this.type = type;
+            }
+
+            void update(double deltaTime, double speed) {
+                y += speed * deltaTime;
+            }
+
+            boolean isOffScreen() { return y > ROAD_Y + ROAD_H + 10; }
+            double getX() { return x; }
+            double getY() { return y; }
+            int getLane() { return lane; }
+            double getSize() { return size; }
+            Type getType() { return type; }
+
+            Rectangle2D.Double getHitbox() {
+                return new Rectangle2D.Double(x, y, size, size);
+            }
+        }
+        private static class Coin {
+            private double x;
             private double y;
             private final int lane;
             private final double size = 18.0;
@@ -1210,6 +1454,8 @@ public class SimpleRunnerGame extends JFrame {
                 return y > ROAD_Y + ROAD_H + 10;
             }
 
+            void setX(double x) { this.x = x; }
+            void setY(double y) { this.y = y; }
             double getX() {
                 return x;
             }
