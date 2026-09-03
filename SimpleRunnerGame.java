@@ -178,20 +178,31 @@ public class SimpleRunnerGame extends JFrame {
         private JLabel titleLabel;
         private Image bgImage;
         private Image playerImage;
+        private Image logoImage;
 
         public HomePanel() {
             setPreferredSize(new Dimension(420, 760));
             setLayout(null);
             
             try {
-                bgImage = ImageIO.read(new File("assets/environment/background.png"));
+                File menuBg = new File("assets/ui/home_bg.png");
+                bgImage = ImageIO.read(menuBg.exists() ? menuBg : new File("assets/environment/background.png"));
                 playerImage = ImageIO.read(new File("assets/player/player_run (2).png"));
+                File logo = new File("assets/ui/logo.png");
+                if (logo.exists()) logoImage = ImageIO.read(logo);
             } catch (Exception e) {}
             
-            titleLabel = new JLabel("JavaDash");
-            titleLabel.setFont(new Font("SansSerif", Font.BOLD, 48));
-            titleLabel.setForeground(Color.WHITE);
-            titleLabel.setBounds(100, 50, 250, 60);
+            titleLabel = new JLabel(logoImage != null ? "" : "JavaDash");
+            if (logoImage != null) {
+                // Logo art carries the branding; the label becomes the player greeting.
+                titleLabel.setFont(new Font("SansSerif", Font.BOLD, 22));
+                titleLabel.setForeground(new Color(150, 225, 255));
+                titleLabel.setBounds(30, 130, 360, 34);
+            } else {
+                titleLabel.setFont(new Font("SansSerif", Font.BOLD, 48));
+                titleLabel.setForeground(Color.WHITE);
+                titleLabel.setBounds(100, 50, 250, 60);
+            }
             add(titleLabel);
 
             JPanel statsPanel = new JPanel();
@@ -264,6 +275,12 @@ public class SimpleRunnerGame extends JFrame {
             
             if (playerImage != null) {
                 g2.drawImage(playerImage, 40, 250, 140, 180, null);
+            }
+
+            if (logoImage != null) {
+                int logoW = 300;
+                int logoH = logoImage.getHeight(null) * logoW / Math.max(1, logoImage.getWidth(null));
+                g2.drawImage(logoImage, (420 - logoW) / 2, 40, logoW, logoH, null);
             }
         }
 
@@ -366,6 +383,7 @@ public class SimpleRunnerGame extends JFrame {
         private static Image playerLeftImage;
         private static Image playerRightImage;
         private static Image playerJumpImage;
+        private static Image playerSlideImage;
         
         private static Map<Environment, BufferedImage> sideLeft = new EnumMap<>(Environment.class);
         private static Map<Environment, BufferedImage> sideRight = new EnumMap<>(Environment.class);
@@ -379,6 +397,9 @@ public class SimpleRunnerGame extends JFrame {
         private static Image heartImage;
         private static Image shieldImage;
         private static Image magnetImage;
+        private static Image boostImage;
+        private static Image doubleScoreImage;
+        private static Image logoImage;
 
         private static Image safeLoadImage(String path) {
             try {
@@ -405,6 +426,7 @@ public class SimpleRunnerGame extends JFrame {
             playerLeftImage = safeLoadImage("assets/player/player_left (1).png");
             playerRightImage = safeLoadImage("assets/player/player_right (1).png");
             playerJumpImage = safeLoadImage("assets/player/player_jump (1).png");
+            playerSlideImage = safeLoadImage("assets/player/player_slide.png");
             
             // Removed backgroundLeft/RightFallback loads to prevent missing asset warnings
             backgroundLeftFallback = null;
@@ -424,7 +446,8 @@ public class SimpleRunnerGame extends JFrame {
             barricadeRight = safeLoadBufferedImage("assets/environment/barricade_raw right.png");
             roadImage = safeLoadImage("assets/environment/road (1).png");
             
-            String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_blue (1)", "car_red (1)", "car_taxi (1)", "cone (1)", "barrier (1)", "truck (1)"};
+            // Slots 3 and 7 now use dedicated art instead of duplicating car_blue/barrier.
+            String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_green", "car_red (1)", "car_taxi (1)", "cone (1)", "pothole", "truck (1)"};
             for(int i = 0; i < obsNames.length; i++) {
                 obstacleImages[i] = safeLoadImage("assets/obstacles/" + obsNames[i] + ".png");
                 if (obstacleImages[i] == null) {
@@ -438,6 +461,9 @@ public class SimpleRunnerGame extends JFrame {
             heartImage = safeLoadImage("assets/ui/heart (1).png");
             shieldImage = safeLoadImage("assets/ui/shield (1).png");
             magnetImage = safeLoadImage("assets/ui/magnet (1).png");
+            boostImage = safeLoadImage("assets/ui/boost.png");
+            doubleScoreImage = safeLoadImage("assets/ui/x2.png");
+            logoImage = safeLoadImage("assets/ui/logo.png");
         }
 
         private static final int WIDTH = 420;
@@ -476,6 +502,8 @@ public class SimpleRunnerGame extends JFrame {
         private static final double GRAVITY = 2200.0; // px/s^2
         private static final double JUMP_STRENGTH = 700.0; // px/s, yields ~111px apex & ~0.63s jump
         private static final double MAX_JUMP_APEX = (JUMP_STRENGTH * JUMP_STRENGTH) / (2.0 * GRAVITY);
+        private static final double SLIDE_DURATION = 0.6;      // seconds spent crouched
+        private static final double SLIDE_HEIGHT_RATIO = 0.5;  // hitbox height while sliding
         private static final double INITIAL_SPEED = 300.0; // px/s
         private static final double MAX_SPEED = 560.0; // px/s
         private static final int TARGET_FPS = 60;
@@ -507,6 +535,8 @@ public class SimpleRunnerGame extends JFrame {
         
         private double shieldTimer = 0.0;
         private double magnetTimer = 0.0;
+        private double boostTimer = 0.0;
+        private double doubleScoreTimer = 0.0;
 
         private long score = 0;
         private int coinsCollected = 0;
@@ -521,6 +551,7 @@ public class SimpleRunnerGame extends JFrame {
         private boolean leftPressed = false;
         private boolean rightPressed = false;
         private boolean upPressed = false;
+        private boolean downPressed = false;
         
         private long runStartTime = 0;
         private String gameOverMessage = "";
@@ -594,6 +625,13 @@ public class SimpleRunnerGame extends JFrame {
             }
         }
 
+        public void slide() {
+            if (gameState == GameState.PLAYING && player.isOnGround() && !player.isSliding()) {
+                player.slide();
+                SoundManager.play("jump");
+            }
+        }
+
         public void togglePause() {
             if (gameState == GameState.PLAYING) {
                 gameState = GameState.PAUSED;
@@ -621,6 +659,8 @@ public class SimpleRunnerGame extends JFrame {
             inputMap.put(KeyStroke.getKeyStroke("pressed W"), "jump");
             inputMap.put(KeyStroke.getKeyStroke("pressed UP"), "jump");
             inputMap.put(KeyStroke.getKeyStroke("pressed SPACE"), "jump");
+            inputMap.put(KeyStroke.getKeyStroke("pressed S"), "slide");
+            inputMap.put(KeyStroke.getKeyStroke("pressed DOWN"), "slide");
             inputMap.put(KeyStroke.getKeyStroke("pressed P"), "pause");
             inputMap.put(KeyStroke.getKeyStroke("pressed R"), "restart");
             inputMap.put(KeyStroke.getKeyStroke("pressed F3"), "toggleDebug");
@@ -633,6 +673,8 @@ public class SimpleRunnerGame extends JFrame {
             inputMap.put(KeyStroke.getKeyStroke("released W"), "jumpRelease");
             inputMap.put(KeyStroke.getKeyStroke("released UP"), "jumpRelease");
             inputMap.put(KeyStroke.getKeyStroke("released SPACE"), "jumpRelease");
+            inputMap.put(KeyStroke.getKeyStroke("released S"), "slideRelease");
+            inputMap.put(KeyStroke.getKeyStroke("released DOWN"), "slideRelease");
 
             actionMap.put("laneLeft", new AbstractAction() {
                 @Override
@@ -679,6 +721,22 @@ public class SimpleRunnerGame extends JFrame {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     upPressed = false;
+                }
+            });
+
+            actionMap.put("slide", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    if (!downPressed) {
+                        slide();
+                        downPressed = true;
+                    }
+                }
+            });
+            actionMap.put("slideRelease", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    downPressed = false;
                 }
             });
 
@@ -735,6 +793,8 @@ public class SimpleRunnerGame extends JFrame {
             distanceAccumulator = 0.0;
             shieldTimer = 0.0;
             magnetTimer = 0.0;
+            boostTimer = 0.0;
+            doubleScoreTimer = 0.0;
             lastSpawnedLane = 1;
             consecutiveLaneCount = 0;
             lastTime = System.nanoTime();
@@ -771,6 +831,7 @@ public class SimpleRunnerGame extends JFrame {
         private void updateGame(double deltaTime) {
             // Difficulty scaling: speed increases progressively based on distance
             obstacleSpeed = Math.min(650.0, INITIAL_SPEED + distance * 0.4);
+            if (boostTimer > 0.0) obstacleSpeed *= 1.5; // speed boost power-up
             // Spawn interval decreases smoothly down to a fair floor of 0.38s
             spawnInterval = Math.max(0.38, 0.85 - (distance * 0.0005));
 
@@ -786,13 +847,15 @@ public class SimpleRunnerGame extends JFrame {
             }
             if (shieldTimer > 0.0) shieldTimer = Math.max(0.0, shieldTimer - deltaTime);
             if (magnetTimer > 0.0) magnetTimer = Math.max(0.0, magnetTimer - deltaTime);
+            if (boostTimer > 0.0) boostTimer = Math.max(0.0, boostTimer - deltaTime);
+            if (doubleScoreTimer > 0.0) doubleScoreTimer = Math.max(0.0, doubleScoreTimer - deltaTime);
 
             // Real distance accumulation (time & speed based, not frame-rate dependent)
             distanceAccumulator += (obstacleSpeed * 0.02) * deltaTime;
             distance = (int) distanceAccumulator;
 
             // Real score accumulation (time based, not frame-rate dependent)
-            scoreAccumulator += 15.0 * deltaTime;
+            scoreAccumulator += 15.0 * deltaTime * scoreMultiplier();
             if (scoreAccumulator >= 1.0) {
                 int add = (int) scoreAccumulator;
                 score += add;
@@ -824,6 +887,11 @@ public class SimpleRunnerGame extends JFrame {
             updatePowerUps(deltaTime);
             updateFloatingTexts(deltaTime);
             checkCollisions();
+        }
+
+        /** Score multiplier granted by the x2 power-up. */
+        private int scoreMultiplier() {
+            return doubleScoreTimer > 0.0 ? 2 : 1;
         }
 
         private void spawnWorldObjects() {
@@ -908,7 +976,8 @@ public class SimpleRunnerGame extends JFrame {
                 int puLane = (lane + 1 + random.nextInt(2)) % 3;
                 double puX = laneCenterX[puLane] - 11.0;
                 double puY = spawnY - 26.0;
-                PowerUp.Type type = random.nextBoolean() ? PowerUp.Type.SHIELD : PowerUp.Type.MAGNET;
+                PowerUp.Type[] types = PowerUp.Type.values();
+                PowerUp.Type type = types[random.nextInt(types.length)];
                 powerUps.add(new PowerUp(puX, puY, puLane, type));
             }
         }
@@ -1015,6 +1084,11 @@ public class SimpleRunnerGame extends JFrame {
                             }
                         }
 
+                        // Barriers (type 1) sit high enough to duck under.
+                        if (type == 1 && player.isSliding()) {
+                            continue; // successfully slid under
+                        }
+
                         obstacle.setHit(true);
                         iterator.remove(); // Remove immediately to prevent duplicate collision
 
@@ -1082,8 +1156,9 @@ public class SimpleRunnerGame extends JFrame {
                 if (playerHitbox.intersects(coin.getHitbox())) {
                     coinsCollected++;
                     SoundManager.play("coin");
-                    score += 120;
-                    floatingTexts.add(new FloatingText(coin.getX() - 2, coin.getY() - 8, "+120", new Color(255, 234, 90), 0.7));
+                    int coinValue = 120 * scoreMultiplier();
+                    score += coinValue;
+                    floatingTexts.add(new FloatingText(coin.getX() - 2, coin.getY() - 8, "+" + coinValue, new Color(255, 234, 90), 0.7));
                     for (int i=0; i<6; i++) particles.add(new Particle(coin.getX()+8, coin.getY()+8, (random.nextDouble()-0.5)*100, (random.nextDouble()-0.5)*100, new Color(255,234,90), 6, 0.5));
                     coinIterator.remove();
                 }
@@ -1101,6 +1176,12 @@ public class SimpleRunnerGame extends JFrame {
                     } else if (pu.getType() == PowerUp.Type.MAGNET) {
                         magnetTimer = 10.0;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "MAGNET!", new Color(255, 150, 50), 0.8));
+                    } else if (pu.getType() == PowerUp.Type.BOOST) {
+                        boostTimer = 6.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "BOOST!", new Color(255, 190, 60), 0.8));
+                    } else if (pu.getType() == PowerUp.Type.DOUBLE_SCORE) {
+                        doubleScoreTimer = 10.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "x2 SCORE!", new Color(190, 140, 255), 0.8));
                     }
                     score += 50;
                     for (int i=0; i<8; i++) particles.add(new Particle(pu.getX()+10, pu.getY()+10, (random.nextDouble()-0.5)*120, (random.nextDouble()-0.5)*120, Color.WHITE, 6, 0.5));
@@ -1183,9 +1264,15 @@ public class SimpleRunnerGame extends JFrame {
             g2.setColor(new Color(12, 18, 30, 200));
             g2.fillRect(0, 0, panelW, panelH);
             
-            g2.setColor(new Color(52, 208, 255));
-            g2.setFont(new Font("SansSerif", Font.BOLD, 36));
-            drawCenteredText(g2, "NEON RUNNER", 240);
+            if (logoImage != null) {
+                int logoW = Math.min(320, panelW - 60);
+                int logoH = logoImage.getHeight(null) * logoW / Math.max(1, logoImage.getWidth(null));
+                g2.drawImage(logoImage, (panelW - logoW) / 2, 240 - logoH, logoW, logoH, null);
+            } else {
+                g2.setColor(new Color(52, 208, 255));
+                g2.setFont(new Font("SansSerif", Font.BOLD, 36));
+                drawCenteredText(g2, "NEON RUNNER", 240);
+            }
             
             double pulse = Math.abs(Math.sin(System.nanoTime() / 3e8));
             g2.setColor(new Color(255, 255, 255, (int)(100 + 155 * pulse)));
@@ -1354,6 +1441,22 @@ public class SimpleRunnerGame extends JFrame {
                 g2.fillRect(panelW - 100, timerY + 6, (int)((magnetTimer/10.0) * 70), 8);
                 g2.setColor(Color.WHITE);
                 g2.drawRect(panelW - 100, timerY + 6, 70, 8);
+                timerY += 30;
+            }
+            if (boostTimer > 0.0) {
+                if (boostImage != null) g2.drawImage(boostImage, panelW - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(255, 190, 60));
+                g2.fillRect(panelW - 100, timerY + 6, (int)((boostTimer/6.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
+                timerY += 30;
+            }
+            if (doubleScoreTimer > 0.0) {
+                if (doubleScoreImage != null) g2.drawImage(doubleScoreImage, panelW - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(190, 140, 255));
+                g2.fillRect(panelW - 100, timerY + 6, (int)((doubleScoreTimer/10.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
             }
         }
 
@@ -1400,8 +1503,11 @@ public class SimpleRunnerGame extends JFrame {
             }
             
             double targetX = laneCenterX[player.getLane()] - (PLAYER_WIDTH / 2.0);
+            boolean sliding = player.isSliding();
             if (!player.isOnGround()) {
                 imgToDraw = playerJumpImage;
+            } else if (sliding && playerSlideImage != null) {
+                imgToDraw = playerSlideImage;
             } else if (player.getX() < targetX - 1.0) {
                 imgToDraw = playerLeftImage;
             } else if (player.getX() > targetX + 1.0) {
@@ -1409,7 +1515,14 @@ public class SimpleRunnerGame extends JFrame {
             }
 
             if (imgToDraw != null) {
-                playerG2.drawImage(imgToDraw, drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, null);
+                if (sliding && imgToDraw == playerSlideImage) {
+                    // The slide art is wide and low: keep it grounded and centred.
+                    int slideW = (int) (PLAYER_WIDTH * 1.5);
+                    int slideH = (int) (PLAYER_HEIGHT * SLIDE_HEIGHT_RATIO);
+                    playerG2.drawImage(imgToDraw, -slideW / 2, -slideH, slideW, slideH, null);
+                } else {
+                    playerG2.drawImage(imgToDraw, drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, null);
+                }
             } else {
                 // Fallback drawing if images fail to load
                 playerG2.setColor(new Color(52, 208, 255));
@@ -1469,12 +1582,22 @@ public class SimpleRunnerGame extends JFrame {
                 g2.drawString("+", x + 6, y + 16);
             }
         }
+        private static Image iconFor(PowerUp.Type type) {
+            switch (type) {
+                case SHIELD: return shieldImage;
+                case MAGNET: return magnetImage;
+                case BOOST: return boostImage;
+                case DOUBLE_SCORE: return doubleScoreImage;
+                default: return null;
+            }
+        }
+
         private void drawPowerUps(Graphics2D g2) {
             for (PowerUp pu : powerUps) {
                 int x = (int) pu.getX();
                 int y = (int) pu.getY();
                 int size = (int) pu.getSize();
-                Image img = (pu.getType() == PowerUp.Type.SHIELD) ? shieldImage : magnetImage;
+                Image img = iconFor(pu.getType());
                 if (img != null) {
                     g2.drawImage(img, x, y, size, size, null);
                 } else {
@@ -1493,7 +1616,7 @@ public class SimpleRunnerGame extends JFrame {
         private void drawFooter(Graphics2D g2) {
             g2.setColor(new Color(255, 255, 255, 60));
             g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            g2.drawString("A/D or touch: lanes  |  Space/Up: jump  |  P: pause", 46, panelH - 16);
+            g2.drawString("A/D: lanes  |  Space: jump  |  S: slide  |  P: pause", 46, panelH - 16);
         }
 
         private void drawMobileControls(Graphics2D g2) {
@@ -1686,6 +1809,18 @@ public class SimpleRunnerGame extends JFrame {
             private double y = GROUND_Y;
             private double velocityY = 0.0;
             private boolean onGround = true;
+            private double slideTimer = 0.0;
+
+            /** Duck under high obstacles; ignored while airborne. */
+            void slide() {
+                if (onGround) {
+                    slideTimer = SLIDE_DURATION;
+                }
+            }
+
+            boolean isSliding() {
+                return slideTimer > 0.0;
+            }
 
             void moveLeft() {
                 lane = Math.max(0, lane - 1);
@@ -1698,11 +1833,15 @@ public class SimpleRunnerGame extends JFrame {
             void jump() {
                 if (onGround) {
                     onGround = false;
+                    slideTimer = 0.0; // jumping cancels a slide
                     velocityY = -JUMP_STRENGTH;
                 }
             }
 
             void update(double deltaTime) {
+                if (slideTimer > 0.0) {
+                    slideTimer = Math.max(0.0, slideTimer - deltaTime);
+                }
                 // Initialize if x is 0 and we have layout
                 if (x == 0 && laneCenterX[lane] != 0) {
                     x = laneCenterX[lane] - (PLAYER_WIDTH / 2.0);
@@ -1734,6 +1873,7 @@ public class SimpleRunnerGame extends JFrame {
                 y = GROUND_Y;
                 velocityY = 0.0;
                 onGround = true;
+                slideTimer = 0.0;
             }
 
             void setX(double x) { this.x = x; }
@@ -1771,8 +1911,15 @@ public class SimpleRunnerGame extends JFrame {
                 double padX = 8.0;
                 double padY = 6.0;
                 double jumpLeniency = onGround ? 0.0 : 24.0;
+                double height = PLAYER_HEIGHT - padY * 2.0 - jumpLeniency;
+                if (isSliding()) {
+                    // Crouched: shorter box anchored to the feet so tall hazards pass overhead
+                    double slideHeight = height * SLIDE_HEIGHT_RATIO;
+                    return new Rectangle2D.Double(x + padX, y + padY + (height - slideHeight),
+                        PLAYER_WIDTH - padX * 2.0, slideHeight);
+                }
                 return new Rectangle2D.Double(x + padX, y + padY,
-                    PLAYER_WIDTH - padX * 2.0, PLAYER_HEIGHT - padY * 2.0 - jumpLeniency);
+                    PLAYER_WIDTH - padX * 2.0, height);
             }
         }
 
@@ -1890,7 +2037,7 @@ public class SimpleRunnerGame extends JFrame {
         }
 
         private static class PowerUp {
-            enum Type { SHIELD, MAGNET }
+            enum Type { SHIELD, MAGNET, BOOST, DOUBLE_SCORE }
             private final double x;
             private double y;
             private final int lane;
