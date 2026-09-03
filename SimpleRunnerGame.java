@@ -10,6 +10,9 @@ import javax.swing.*;
 import javax.imageio.ImageIO;
 import java.io.File;
 import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.util.Map;
+import java.util.EnumMap;
 
 public class SimpleRunnerGame extends JFrame {
     public static CardLayout cardLayout = new CardLayout();
@@ -344,14 +347,32 @@ public class SimpleRunnerGame extends JFrame {
             GAME_OVER
         }
 
+        public enum Environment { CITY, FOREST, DESERT, NIGHT_HIGHWAY }
+
+        private static final double ENV_1 = 100.0;
+        private static final double ENV_2 = 200.0;
+        private static final double ENV_3 = 300.0;
+        private static final boolean LOOP_ENVIRONMENTS = false;
+
+        private static Environment environmentFor(double distance) {
+            int segment = Math.max(0, (int) (distance / 200.0));
+            Environment[] envs = Environment.values();
+            // A pseudo-random sequence that guarantees the environment changes every 200m without repeating consecutively
+            return envs[(segment * 3 + 1) % envs.length];
+        }
+
         private static Image playerRunImage;
         private static Image playerRunImage2;
         private static Image playerLeftImage;
         private static Image playerRightImage;
         private static Image playerJumpImage;
         
-        private static Image[] bgLeftImages = new Image[4];
-        private static Image[] bgRightImages = new Image[4];
+        private static Map<Environment, BufferedImage> sideLeft = new EnumMap<>(Environment.class);
+        private static Map<Environment, BufferedImage> sideRight = new EnumMap<>(Environment.class);
+        private static BufferedImage barricadeLeft;
+        private static BufferedImage barricadeRight;
+        private static BufferedImage backgroundLeftFallback;
+        private static BufferedImage backgroundRightFallback;
         private static Image roadImage;
         private static Image[] obstacleImages = new Image[9];
         private static Image[] coinImages = new Image[8];
@@ -367,6 +388,17 @@ public class SimpleRunnerGame extends JFrame {
             return null;
         }
 
+        private static BufferedImage safeLoadBufferedImage(String path) {
+            try {
+                File f = new File(path);
+                if (f.exists()) return ImageIO.read(f);
+                System.out.println("Warning: Missing asset " + path);
+            } catch (Exception e) {
+                System.out.println("Error loading asset " + path + ": " + e.getMessage());
+            }
+            return null;
+        }
+
         static {
             playerRunImage = safeLoadImage("assets/player/player_run (2).png");
             playerRunImage2 = safeLoadImage("assets/player/player_run (1)_processed.png");
@@ -374,10 +406,22 @@ public class SimpleRunnerGame extends JFrame {
             playerRightImage = safeLoadImage("assets/player/player_right (1).png");
             playerJumpImage = safeLoadImage("assets/player/player_jump (1).png");
             
-            for(int i = 0; i < 4; i++) {
-                bgLeftImages[i] = safeLoadImage("assets/environment/background_left.png");
-                bgRightImages[i] = safeLoadImage("assets/environment/background_right.png");
+            // Removed backgroundLeft/RightFallback loads to prevent missing asset warnings
+            backgroundLeftFallback = null;
+            backgroundRightFallback = null;
+
+            String[] envNames = {"city", "forest", "desert", "night"};
+            Environment[] envs = {Environment.CITY, Environment.FOREST, Environment.DESERT, Environment.NIGHT_HIGHWAY};
+            
+            for (int i = 0; i < envNames.length; i++) {
+                BufferedImage l = safeLoadBufferedImage("assets/environment/" + envNames[i] + "_side_raw left.png");
+                BufferedImage r = safeLoadBufferedImage("assets/environment/" + envNames[i] + "_side_raw right.png");
+                if (l != null) sideLeft.put(envs[i], l);
+                if (r != null) sideRight.put(envs[i], r);
             }
+            
+            barricadeLeft = safeLoadBufferedImage("assets/environment/barricade_raw left.png");
+            barricadeRight = safeLoadBufferedImage("assets/environment/barricade_raw right.png");
             roadImage = safeLoadImage("assets/environment/road (1).png");
             
             String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_blue (1)", "car_red (1)", "car_taxi (1)", "cone (1)", "barrier (1)", "truck (1)"};
@@ -398,11 +442,34 @@ public class SimpleRunnerGame extends JFrame {
 
         private static final int WIDTH = 420;
         private static final int HEIGHT = 760;
-        private static final int ROAD_X = 90;
         private static final int ROAD_Y = 24;
-        private static final int ROAD_W = 240;
         private static final int ROAD_H = 712; // HEIGHT - 48
-        private static final int[] LANE_X = {108, 188, 268};
+
+        // --- layout (all drawing and spawning must use these; delete every other X constant) ---
+        private static int panelW, panelH;
+        private static int SIDE_W;        // width of each side strip
+        private static int ROAD_LEFT;     // road left edge
+        private static int ROAD_RIGHT;    // road right edge
+        private static int LANE_W;        // width of one lane
+        private static int[] laneCenterX = new int[3];
+
+        private void computeLayout() {
+            int w = getWidth();
+            int h = getHeight();
+            if (w == 0 || h == 0) return;
+            panelW = w;
+            panelH = h;
+            
+            // Balanced layout for 420px width
+            SIDE_W = 90; // Background area + barricade
+            ROAD_LEFT = SIDE_W; 
+            ROAD_RIGHT = panelW - SIDE_W;         // road is CENTERED
+            LANE_W = (ROAD_RIGHT - ROAD_LEFT) / 3;
+            
+            for (int i = 0; i < 3; i++) {
+                laneCenterX[i] = ROAD_LEFT + LANE_W * i + LANE_W / 2;
+            }
+        }
         private static final int PLAYER_WIDTH = 44;
         private static final int PLAYER_HEIGHT = 56;
         private static final double GROUND_Y = 24 + 712 - 92.0;
@@ -692,6 +759,9 @@ public class SimpleRunnerGame extends JFrame {
             // Rolling average FPS measurement
             rollingFps = rollingFps * 0.9 + (1.0 / deltaTime) * 0.1;
 
+            computeLayout();
+            if (LANE_W <= 0) return;
+
             if (gameState == GameState.PLAYING) {
                 updateGame(deltaTime);
             }
@@ -776,9 +846,8 @@ public class SimpleRunnerGame extends JFrame {
             int obsHeight = 34 + random.nextInt(11);
             double spawnY = ROAD_Y - obsHeight - 12.0;
 
-            // Ensure obstacle stays strictly inside road boundaries
-            double obsX = LANE_X[lane];
-            obsX = Math.max(ROAD_X + 10, Math.min(ROAD_X + ROAD_W - 54, obsX));
+            // Ensure obstacle stays strictly inside road boundaries (no longer clamped since laneCenterX is strict)
+            double obsX = laneCenterX[lane];
             int obsType = random.nextInt(9); // 0 to 8
             
             double w = 44.0;
@@ -805,9 +874,7 @@ public class SimpleRunnerGame extends JFrame {
             double adjustedSpawnY = ROAD_Y - h - 12.0;
             
             // Center the obstacle in the lane properly
-            int laneWidth = ROAD_W / 3;
-            double laneCenter = ROAD_X + (lane * laneWidth) + (laneWidth / 2.0);
-            double centeredX = laneCenter - (w / 2.0);
+            double centeredX = laneCenterX[lane] - (w / 2.0);
             
             obstacles.add(new Obstacle(centeredX, adjustedSpawnY, lane, w, h, obsType));
 
@@ -815,11 +882,11 @@ public class SimpleRunnerGame extends JFrame {
             if (random.nextInt(100) < 55) {
                 // 30% chance: spawn elevated coin directly above obstacle to reward jumping
                 if (random.nextInt(100) < 30) {
-                    coins.add(new Coin(obsX + 13.0, spawnY - 52.0, lane));
+                    coins.add(new Coin(laneCenterX[lane] - 9.0, spawnY - 52.0, lane));
                 } else {
                     // Spawn ground coin in a separate free lane without obstacle overlap
                     int coinLane = (lane + 1 + random.nextInt(2)) % 3;
-                    double coinX = LANE_X[coinLane] + 13.0;
+                    double coinX = laneCenterX[coinLane] - 9.0;
                     coins.add(new Coin(coinX, spawnY - 10.0, coinLane));
                     // 25% chance of a 2-coin sequence
                     if (random.nextInt(100) < 25) {
@@ -831,7 +898,7 @@ public class SimpleRunnerGame extends JFrame {
             // Life Power-Up Generation (10% chance)
             if (lives < MAX_LIVES && random.nextInt(100) < 10) {
                 int lifeLane = (lane + 1 + random.nextInt(2)) % 3;
-                double lifeX = LANE_X[lifeLane] + 11.0;
+                double lifeX = laneCenterX[lifeLane] - 11.0;
                 double lifeY = spawnY - 26.0;
                 lifePowerUps.add(new LifePowerUp(lifeX, lifeY, lifeLane));
             }
@@ -839,7 +906,7 @@ public class SimpleRunnerGame extends JFrame {
             // Shield or Magnet Generation (10% chance total)
             if (random.nextInt(100) < 10) {
                 int puLane = (lane + 1 + random.nextInt(2)) % 3;
-                double puX = LANE_X[puLane] + 11.0;
+                double puX = laneCenterX[puLane] - 11.0;
                 double puY = spawnY - 26.0;
                 PowerUp.Type type = random.nextBoolean() ? PowerUp.Type.SHIELD : PowerUp.Type.MAGNET;
                 powerUps.add(new PowerUp(puX, puY, puLane, type));
@@ -1062,6 +1129,8 @@ public class SimpleRunnerGame extends JFrame {
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
+            computeLayout();
+            if (LANE_W <= 0) return;
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -1075,8 +1144,10 @@ public class SimpleRunnerGame extends JFrame {
 
             drawBackground(g2);
             drawPhoneFrame(g2);
-            drawSidewalks(g2);
+            double distanceMeters = distanceAccumulator;
+            drawEnvironmentSides(g2, distanceMeters, roadScroll);
             drawRoad(g2);
+            drawEnvironmentBarricades(g2, roadScroll);
             drawHeader(g2);
             drawObstacles(g2);
             drawCoins(g2);
@@ -1110,7 +1181,7 @@ public class SimpleRunnerGame extends JFrame {
 
         private void drawStartMenuOverlay(Graphics2D g2) {
             g2.setColor(new Color(12, 18, 30, 200));
-            g2.fillRect(0, 0, WIDTH, HEIGHT);
+            g2.fillRect(0, 0, panelW, panelH);
             
             g2.setColor(new Color(52, 208, 255));
             g2.setFont(new Font("SansSerif", Font.BOLD, 36));
@@ -1125,101 +1196,132 @@ public class SimpleRunnerGame extends JFrame {
         
         private void drawBackground(Graphics2D g2) {
             // Sky gradient or dark fill
-            GradientPaint sky = new GradientPaint(0, 0, new Color(10, 14, 26), 0, HEIGHT, new Color(20, 26, 46));
+            GradientPaint sky = new GradientPaint(0, 0, new Color(10, 14, 26), 0, panelH, new Color(20, 26, 46));
             g2.setPaint(sky);
-            g2.fillRect(0, 0, WIDTH, HEIGHT);
+            g2.fillRect(0, 0, panelW, panelH);
         }
         
-        private void drawSidewalks(Graphics2D g2) {
-            int imageWidth = 800;
-            int imageHeight = 400;
-            int bgHeight = imageHeight;
-            int bgScroll = (int)(distanceAccumulator * 1.5) % (bgHeight * 4);
-            
-            int leftSidewalkX = 24;
-            int rightSidewalkX = ROAD_X + ROAD_W;
-            int sidewalkWidth = ROAD_X - 24; // 90 - 24 = 66
-            
-            Graphics2D g2Clip = (Graphics2D) g2.create();
-            // Clip to phone screen
-            g2Clip.setClip(new RoundRectangle2D.Double(24, 24, WIDTH - 48, HEIGHT - 48, 50, 50));
-            
-            // Calculate how many tiles we need to cover the screen height of 760
-            // Screen height is 760, image height is 400, so we need at least 3 tiles (-1, 0, 1, 2)
-            for (int i = -1; i < 5; i++) {
-                int drawY = i * bgHeight + (bgScroll % bgHeight);
-                int bgIndex = (int)((distanceAccumulator * 1.5 + i * bgHeight) / bgHeight) % 4;
-                if (bgIndex < 0) bgIndex += 4;
-                
-                if (bgLeftImages[bgIndex] != null) {
-                    // Draw at original size without scaling. Since we want it to look exactly the same but uncompressed,
-                    // we'll align the image such that the relevant part is visible, or just draw from the x coordinate.
-                    // The left and right backgrounds might have been designed to be anchored differently.
-                    // We'll draw them uncompressed. To fit the sidewalk area which is on the left, we'll draw it starting at leftSidewalkX.
-                    // For the right, we'll draw it starting at rightSidewalkX. 
-                    // However, if the image is 800 wide, it will just draw normally but clip to the screen.
-                    // To ensure it doesn't leak out of its intended area if they were meant to only be on sidewalks, 
-                    // we might need to clip to the sidewalk bounds? 
-                    // The original code didn't clip to sidewalk width, it just scaled the image to sidewalkWidth.
-                    // The prompt: "dont adjust or compress the background right nd left. make the background right nd left to fit the size originially"
-                    g2Clip.drawImage(bgLeftImages[bgIndex], leftSidewalkX, drawY, null); 
-                }
-                if (bgRightImages[bgIndex] != null) {
-                    g2Clip.drawImage(bgRightImages[bgIndex], rightSidewalkX, drawY, null); 
-                }
+        private void drawSideStrip(Graphics2D g, BufferedImage tex, int x, int w, int panelH, double scrollY) {
+            if (tex == null || w <= 0) return;
+            java.awt.Shape oldClip = g.getClip();
+            g.clipRect(x, 0, w, panelH);
+            int th = Math.max(1, (int) (tex.getHeight() * ((double) w / tex.getWidth())));
+            int off = (int) (scrollY % th);
+            if (off > 0) off -= th;
+            for (int y = off; y < panelH; y += th) {
+                g.drawImage(tex, x, y, x + w, y + th, 0, 0, tex.getWidth(), tex.getHeight(), null);
             }
+            g.setClip(oldClip);
+        }
+
+        private void drawBarricade(Graphics2D g, BufferedImage bar, int x, int panelH, double scrollY) {
+            if (bar == null) return;
+            int bh = bar.getHeight();
+            int off = (int) (scrollY % bh);
+            if (off > 0) off -= bh;
+            for (int y = off; y < panelH; y += bh) {
+                g.drawImage(bar, x, y, null);
+            }
+        }
+
+        private void drawEnvironmentSides(Graphics2D g2, double distanceMeters, double scrollY) {
+            Graphics2D g2Clip = (Graphics2D) g2.create();
+            g2Clip.setClip(new RoundRectangle2D.Double(24, 24, panelW - 48, panelH - 48, 50, 50));
+            
+            int barricadeW = 16;
+            int leftEnvX = 24;
+            int leftEnvW = Math.max(0, (ROAD_LEFT - barricadeW) - leftEnvX);
+            int rightEnvX = ROAD_RIGHT + barricadeW;
+            int rightEnvW = Math.max(0, (panelW - 24) - rightEnvX);
+            
+            int currentSegment = (int) (distanceMeters / 200.0);
+            double distIntoSegment = distanceMeters - (currentSegment * 200.0);
+            // 1 meter = 50 pixels of scrolling (based on obstacleSpeed * 0.02 update rate)
+            int boundaryY = (int) (distIntoSegment * 50.0);
+            
+            Environment envNew = environmentFor(currentSegment * 200.0);
+            Environment envOld = environmentFor((currentSegment - 1) * 200.0);
+            
+            // Draw OLD environment in the lower part (sliding off the bottom)
+            if (boundaryY < panelH) {
+                Graphics2D gOld = (Graphics2D) g2Clip.create();
+                gOld.clipRect(0, boundaryY, panelW, panelH - boundaryY);
+                BufferedImage ltOld = sideLeft.getOrDefault(envOld, backgroundLeftFallback);
+                BufferedImage rtOld = sideRight.getOrDefault(envOld, backgroundRightFallback);
+                drawSideStrip(gOld, ltOld, leftEnvX, leftEnvW, panelH, scrollY);
+                drawSideStrip(gOld, rtOld, rightEnvX, rightEnvW, panelH, scrollY);
+                gOld.dispose();
+            }
+            
+            // Draw NEW environment in the upper part (rolling down from the top)
+            if (boundaryY > 0) {
+                Graphics2D gNew = (Graphics2D) g2Clip.create();
+                gNew.clipRect(0, 0, panelW, boundaryY);
+                BufferedImage ltNew = sideLeft.getOrDefault(envNew, backgroundLeftFallback);
+                BufferedImage rtNew = sideRight.getOrDefault(envNew, backgroundRightFallback);
+                drawSideStrip(gNew, ltNew, leftEnvX, leftEnvW, panelH, scrollY);
+                drawSideStrip(gNew, rtNew, rightEnvX, rightEnvW, panelH, scrollY);
+                gNew.dispose();
+            }
+            
+            g2Clip.dispose();
+        }
+
+        private void drawEnvironmentBarricades(Graphics2D g2, double scrollY) {
+            Graphics2D g2Clip = (Graphics2D) g2.create();
+            g2Clip.setClip(new RoundRectangle2D.Double(24, 24, panelW - 48, panelH - 48, 50, 50));
+            
+            int barricadeW = 16;
+            drawSideStrip(g2Clip, barricadeLeft, ROAD_LEFT - barricadeW, barricadeW, panelH, scrollY);
+            drawSideStrip(g2Clip, barricadeRight, ROAD_RIGHT, barricadeW, panelH, scrollY);
+            
             g2Clip.dispose();
         }
 
         private void drawPhoneFrame(Graphics2D g2) {
             g2.setColor(new Color(20, 26, 46));
-            g2.fillRoundRect(24, 24, WIDTH - 48, HEIGHT - 48, 50, 50);
+            g2.fillRoundRect(24, 24, panelW - 48, panelH - 48, 50, 50);
 
             g2.setColor(new Color(72, 82, 128));
             g2.setStroke(new BasicStroke(4f));
-            g2.drawRoundRect(24, 24, WIDTH - 48, HEIGHT - 48, 50, 50);
+            g2.drawRoundRect(24, 24, panelW - 48, panelH - 48, 50, 50);
 
             g2.setColor(new Color(255, 255, 255, 120));
-            g2.fillOval(WIDTH / 2 - 28, 34, 56, 8);
-            g2.fillOval(WIDTH / 2 - 10, HEIGHT - 36, 20, 8);
+            g2.fillOval(panelW / 2 - 28, 34, 56, 8);
+            g2.fillOval(panelW / 2 - 10, panelH - 36, 20, 8);
         }
 
         private void drawRoad(Graphics2D g2) {
-            // The road texture is for 1 lane, so we draw it 3 times side by side
-            if (roadImage != null) {
-                int rH = roadImage != null ? roadImage.getHeight(null) : 1024;
-                int rW = roadImage != null ? roadImage.getWidth(null) : 512;
-                
-                int laneWidth = ROAD_W / 3;
-                int scaledH = (int)((double)laneWidth / rW * rH);
-                if(scaledH <= 0) scaledH = rH;
-                
-                int scrollOff = (int) (roadScroll % scaledH);
-                Graphics2D g2Clip = (Graphics2D) g2.create();
-                RoundRectangle2D roadClip = new RoundRectangle2D.Double(ROAD_X, ROAD_Y, ROAD_W, ROAD_H, 28, 28);
-                g2Clip.setClip(roadClip);
-                
-                for(int y = ROAD_Y - scaledH + scrollOff; y < ROAD_Y + ROAD_H; y += scaledH) {
-                    g2Clip.drawImage(roadImage, ROAD_X, y, laneWidth, scaledH, null);
-                    g2Clip.drawImage(roadImage, ROAD_X + laneWidth, y, laneWidth, scaledH, null);
-                    g2Clip.drawImage(roadImage, ROAD_X + laneWidth * 2, y, laneWidth, scaledH, null);
-                }
-                
-                // Add soft overlay edge for phone frame blend
-                g2Clip.setColor(new Color(255, 255, 255, 40));
-                g2Clip.setStroke(new BasicStroke(3f));
-                g2Clip.draw(roadClip);
-                g2Clip.dispose();
-            } else {
-                RoundRectangle2D road = new RoundRectangle2D.Double(ROAD_X, ROAD_Y, ROAD_W, ROAD_H, 28, 28);
-                g2.setColor(new Color(30, 42, 76));
-                g2.fill(road);
+            Graphics2D g2Clip = (Graphics2D) g2.create();
+            g2Clip.setClip(new RoundRectangle2D.Double(24, 24, panelW - 48, panelH - 48, 50, 50));
+            
+            // road rectangle
+            g2Clip.setColor(new Color(100, 100, 100));
+            g2Clip.fillRect(ROAD_LEFT, 0, ROAD_RIGHT - ROAD_LEFT, panelH);
+            
+            // curbs
+            g2Clip.setColor(Color.LIGHT_GRAY);
+            g2Clip.fillRect(ROAD_LEFT - 4, 0, 4, panelH);
+            g2Clip.fillRect(ROAD_RIGHT, 0, 4, panelH);
+            g2Clip.setColor(Color.DARK_GRAY);
+            g2Clip.fillRect(ROAD_LEFT, 0, 3, panelH);
+            g2Clip.fillRect(ROAD_RIGHT - 3, 0, 3, panelH);
+
+            // lane dashes
+            g2Clip.setColor(Color.WHITE);
+            for (int i = 1; i <= 2; i++) {
+                int x = ROAD_LEFT + LANE_W * i;
+                int off = (int) (roadScroll % 55);
+                if (off > 0) off -= 55;
+                for (int y = off; y < panelH; y += 55)
+                    g2Clip.fillRect(x - 3, y, 6, 30);
             }
+            g2Clip.dispose();
         }
 
         private void drawHeader(Graphics2D g2) {
             g2.setColor(new Color(18, 26, 48, 235));
-            g2.fillRoundRect(24, 14, WIDTH - 48, 30, 14, 14);
+            g2.fillRoundRect(24, 14, panelW - 48, 30, 14, 14);
             g2.setColor(new Color(112, 190, 240));
             g2.setFont(new Font("SansSerif", Font.BOLD, 14));
             g2.drawString("Score " + String.format("%06d", score), 34, 34);
@@ -1234,23 +1336,24 @@ public class SimpleRunnerGame extends JFrame {
             } else {
                 g2.drawString("❤️ " + lives, 326, 34);
             }
-            
-            // Draw Timers for Shield & Magnet
+        }
+        
+        private void drawPowerUpTimers(Graphics2D g2) {
             int timerY = 60;
             if (shieldTimer > 0.0) {
-                if (shieldImage != null) g2.drawImage(shieldImage, WIDTH - 130, timerY, 20, 20, null);
+                if (shieldImage != null) g2.drawImage(shieldImage, panelW - 130, timerY, 20, 20, null);
                 g2.setColor(new Color(112, 196, 255));
-                g2.fillRect(WIDTH - 100, timerY + 6, (int)((shieldTimer/10.0) * 70), 8);
+                g2.fillRect(panelW - 100, timerY + 6, (int)((shieldTimer/10.0) * 70), 8);
                 g2.setColor(Color.WHITE);
-                g2.drawRect(WIDTH - 100, timerY + 6, 70, 8);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
                 timerY += 30;
             }
             if (magnetTimer > 0.0) {
-                if (magnetImage != null) g2.drawImage(magnetImage, WIDTH - 130, timerY, 20, 20, null);
+                if (magnetImage != null) g2.drawImage(magnetImage, panelW - 130, timerY, 20, 20, null);
                 g2.setColor(new Color(255, 150, 50));
-                g2.fillRect(WIDTH - 100, timerY + 6, (int)((magnetTimer/10.0) * 70), 8);
+                g2.fillRect(panelW - 100, timerY + 6, (int)((magnetTimer/10.0) * 70), 8);
                 g2.setColor(Color.WHITE);
-                g2.drawRect(WIDTH - 100, timerY + 6, 70, 8);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
             }
         }
 
@@ -1296,7 +1399,7 @@ public class SimpleRunnerGame extends JFrame {
                 imgToDraw = playerRunImage2;
             }
             
-            double targetX = LANE_X[player.getLane()];
+            double targetX = laneCenterX[player.getLane()] - (PLAYER_WIDTH / 2.0);
             if (!player.isOnGround()) {
                 imgToDraw = playerJumpImage;
             } else if (player.getX() < targetX - 1.0) {
@@ -1390,11 +1493,11 @@ public class SimpleRunnerGame extends JFrame {
         private void drawFooter(Graphics2D g2) {
             g2.setColor(new Color(255, 255, 255, 60));
             g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            g2.drawString("A/D or touch: lanes  |  Space/Up: jump  |  P: pause", 46, HEIGHT - 16);
+            g2.drawString("A/D or touch: lanes  |  Space/Up: jump  |  P: pause", 46, panelH - 16);
         }
 
         private void drawMobileControls(Graphics2D g2) {
-            int buttonY = HEIGHT - 86;
+            int buttonY = panelH - 86;
             int buttonSize = 46;
             int leftX = 95;
             int rightX = 155;
@@ -1423,7 +1526,7 @@ public class SimpleRunnerGame extends JFrame {
 
         private void drawGameOverOverlay(Graphics2D g2) {
             g2.setColor(new Color(0, 0, 0, 185));
-            g2.fillRect(0, 0, WIDTH, HEIGHT);
+            g2.fillRect(0, 0, panelW, panelH);
             g2.setColor(new Color(255, 90, 90));
             g2.setFont(new Font("SansSerif", Font.BOLD, 30));
             drawCenteredText(g2, "GAME OVER", 320);
@@ -1460,7 +1563,7 @@ public class SimpleRunnerGame extends JFrame {
 
         private void drawPausedOverlay(Graphics2D g2) {
             g2.setColor(new Color(0, 0, 0, 150));
-            g2.fillRect(0, 0, WIDTH, HEIGHT);
+            g2.fillRect(0, 0, panelW, panelH);
             g2.setColor(new Color(255, 255, 255));
             g2.setFont(new Font("SansSerif", Font.BOLD, 28));
             drawCenteredText(g2, "PAUSED", 340);
@@ -1496,9 +1599,9 @@ public class SimpleRunnerGame extends JFrame {
 
             // Comprehensive Debug telemetry metrics panel
             g2.setColor(new Color(10, 16, 32, 230));
-            g2.fillRoundRect(24, 48, WIDTH - 48, 140, 12, 12);
+            g2.fillRoundRect(24, 48, panelW - 48, 140, 12, 12);
             g2.setColor(new Color(72, 180, 255));
-            g2.drawRoundRect(24, 48, WIDTH - 48, 140, 12, 12);
+            g2.drawRoundRect(24, 48, panelW - 48, 140, 12, 12);
 
             g2.setColor(Color.CYAN);
             g2.setFont(new Font("Monospaced", Font.BOLD, 10));
@@ -1513,7 +1616,7 @@ public class SimpleRunnerGame extends JFrame {
 
         private void drawCenteredText(Graphics2D g2, String text, int baseline) {
             int textWidth = g2.getFontMetrics().stringWidth(text);
-            g2.drawString(text, (WIDTH - textWidth) / 2, baseline);
+            g2.drawString(text, (panelW - textWidth) / 2, baseline);
         }
 
         
@@ -1579,20 +1682,17 @@ public class SimpleRunnerGame extends JFrame {
 
         private static class Player {
             private int lane = 1;
-            private double x = LANE_X[lane];
-            private double targetX = LANE_X[lane];
+            private double x = 0;
             private double y = GROUND_Y;
             private double velocityY = 0.0;
             private boolean onGround = true;
 
             void moveLeft() {
                 lane = Math.max(0, lane - 1);
-                targetX = LANE_X[lane];
             }
 
             void moveRight() {
                 lane = Math.min(2, lane + 1);
-                targetX = LANE_X[lane];
             }
 
             void jump() {
@@ -1603,11 +1703,16 @@ public class SimpleRunnerGame extends JFrame {
             }
 
             void update(double deltaTime) {
+                // Initialize if x is 0 and we have layout
+                if (x == 0 && laneCenterX[lane] != 0) {
+                    x = laneCenterX[lane] - (PLAYER_WIDTH / 2.0);
+                }
                 // Smooth lane movement interpolation (frame-rate independent)
                 double lerpSpeed = 16.0;
-                x += (targetX - x) * Math.min(1.0, lerpSpeed * deltaTime);
-                if (Math.abs(targetX - x) < 0.2) {
-                    x = targetX;
+                double targetXPos = laneCenterX[lane] - (PLAYER_WIDTH / 2.0);
+                x += (targetXPos - x) * Math.min(1.0, lerpSpeed * deltaTime);
+                if (Math.abs(targetXPos - x) < 0.2) {
+                    x = targetXPos;
                 }
 
                 // Vertical jump physics and gravity
@@ -1625,8 +1730,7 @@ public class SimpleRunnerGame extends JFrame {
 
             void reset() {
                 lane = 1;
-                x = LANE_X[lane];
-                targetX = LANE_X[lane];
+                x = laneCenterX[lane] - (PLAYER_WIDTH / 2.0);
                 y = GROUND_Y;
                 velocityY = 0.0;
                 onGround = true;
@@ -1651,10 +1755,7 @@ public class SimpleRunnerGame extends JFrame {
             }
 
             int getTargetLane() {
-                for (int i = 0; i < 3; i++) {
-                    if (Math.abs(targetX - LANE_X[i]) < 1.0) return i;
-                }
-                return lane;
+                return lane; // now we just return current lane target directly
             }
 
             boolean isJumping() {
