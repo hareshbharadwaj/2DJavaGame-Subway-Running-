@@ -375,8 +375,8 @@ public class SimpleRunnerGame extends JFrame {
             playerJumpImage = safeLoadImage("assets/player/player_jump (1).png");
             
             for(int i = 0; i < 4; i++) {
-                bgLeftImages[i] = safeLoadImage("assets/environment/background.png");
-                bgRightImages[i] = safeLoadImage("assets/environment/background.png");
+                bgLeftImages[i] = safeLoadImage("assets/environment/background_left.png");
+                bgRightImages[i] = safeLoadImage("assets/environment/background_right.png");
             }
             roadImage = safeLoadImage("assets/environment/road (1).png");
             
@@ -1131,7 +1131,9 @@ public class SimpleRunnerGame extends JFrame {
         }
         
         private void drawSidewalks(Graphics2D g2) {
-            int bgHeight = 760;
+            int imageWidth = 800;
+            int imageHeight = 400;
+            int bgHeight = imageHeight;
             int bgScroll = (int)(distanceAccumulator * 1.5) % (bgHeight * 4);
             
             int leftSidewalkX = 24;
@@ -1142,16 +1144,28 @@ public class SimpleRunnerGame extends JFrame {
             // Clip to phone screen
             g2Clip.setClip(new RoundRectangle2D.Double(24, 24, WIDTH - 48, HEIGHT - 48, 50, 50));
             
+            // Calculate how many tiles we need to cover the screen height of 760
+            // Screen height is 760, image height is 400, so we need at least 3 tiles (-1, 0, 1, 2)
             for (int i = -1; i < 5; i++) {
                 int drawY = i * bgHeight + (bgScroll % bgHeight);
                 int bgIndex = (int)((distanceAccumulator * 1.5 + i * bgHeight) / bgHeight) % 4;
                 if (bgIndex < 0) bgIndex += 4;
                 
                 if (bgLeftImages[bgIndex] != null) {
-                    g2Clip.drawImage(bgLeftImages[bgIndex], leftSidewalkX, drawY, sidewalkWidth, bgHeight, null); 
+                    // Draw at original size without scaling. Since we want it to look exactly the same but uncompressed,
+                    // we'll align the image such that the relevant part is visible, or just draw from the x coordinate.
+                    // The left and right backgrounds might have been designed to be anchored differently.
+                    // We'll draw them uncompressed. To fit the sidewalk area which is on the left, we'll draw it starting at leftSidewalkX.
+                    // For the right, we'll draw it starting at rightSidewalkX. 
+                    // However, if the image is 800 wide, it will just draw normally but clip to the screen.
+                    // To ensure it doesn't leak out of its intended area if they were meant to only be on sidewalks, 
+                    // we might need to clip to the sidewalk bounds? 
+                    // The original code didn't clip to sidewalk width, it just scaled the image to sidewalkWidth.
+                    // The prompt: "dont adjust or compress the background right nd left. make the background right nd left to fit the size originially"
+                    g2Clip.drawImage(bgLeftImages[bgIndex], leftSidewalkX, drawY, null); 
                 }
                 if (bgRightImages[bgIndex] != null) {
-                    g2Clip.drawImage(bgRightImages[bgIndex], rightSidewalkX, drawY, sidewalkWidth, bgHeight, null); 
+                    g2Clip.drawImage(bgRightImages[bgIndex], rightSidewalkX, drawY, null); 
                 }
             }
             g2Clip.dispose();
