@@ -141,7 +141,7 @@ def main():
     save(cover(home, 420, 760).convert("RGBA"), "ui/home_bg.png")
 
 
-if __name__ == "__main__" and not os.environ.get("PASS2"):
+if __name__ == "__main__" and not (os.environ.get("PASS2") or os.environ.get("PASS3")):
     main()
 
 
@@ -168,3 +168,28 @@ def process_traffic_and_abilities():
 
 if os.environ.get("PASS2"):
     process_traffic_and_abilities()
+
+
+def process_characters():
+    """Third pass: three selectable characters for the landing-page picker.
+
+    Each is keyed, trimmed and scaled to the same 78x160 footprint as the
+    original player sprite so nothing in the game's layout has to change.
+    The shirt/tunic on every character is drawn a flat blue, which the game
+    recolours at runtime (see SimpleRunnerGame.recolourOutfit).
+    """
+    for src, dst in [
+        ("char_girl_run.png", "player/char_girl.png"),
+        ("char_robot_run.png", "player/char_robot.png"),
+        ("char_ninja_run.png", "player/char_ninja.png"),
+    ]:
+        img = trim(to_rgba(os.path.join(RAW, src)))
+        # letterbox into the reference 78x160 box, preserving aspect
+        img.thumbnail((78, 160), Image.LANCZOS)
+        canvas = Image.new("RGBA", (78, 160), (0, 0, 0, 0))
+        canvas.alpha_composite(img, ((78 - img.width) // 2, 160 - img.height))
+        save(canvas, dst)
+
+
+if os.environ.get("PASS3"):
+    process_characters()

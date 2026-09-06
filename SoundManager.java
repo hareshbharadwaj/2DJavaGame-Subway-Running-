@@ -12,7 +12,7 @@ public class SoundManager {
     private static final String SOUND_DIR = "sounds/";
 
     public static void loadAll() {
-        String[] sounds = {"coin", "jump", "crash", "click", "powerup", "gameover", "music"};
+        String[] sounds = {"coin", "jump", "crash", "click", "powerup", "gameover", "music", "jetpack"};
         for (String sound : sounds) {
             try {
                 File file = new File(SOUND_DIR + sound + ".wav");

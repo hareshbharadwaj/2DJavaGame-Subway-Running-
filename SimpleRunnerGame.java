@@ -176,9 +176,13 @@ public class SimpleRunnerGame extends JFrame {
         private JLabel coinsLabel;
         private JLabel gamesLabel;
         private JLabel titleLabel;
+        private JLabel charNameLabel;
         private Image bgImage;
-        private Image playerImage;
         private Image logoImage;
+
+        /** Drives the slow turntable spin of the character on the menu. */
+        private final Timer spinTimer;
+        private double spinAngle = 0.0;
 
         public HomePanel() {
             setPreferredSize(new Dimension(420, 760));
@@ -187,7 +191,6 @@ public class SimpleRunnerGame extends JFrame {
             try {
                 File menuBg = new File("assets/ui/home_bg.png");
                 bgImage = ImageIO.read(menuBg.exists() ? menuBg : new File("assets/environment/background.png"));
-                playerImage = ImageIO.read(new File("assets/player/player_run (2).png"));
                 File logo = new File("assets/ui/logo.png");
                 if (logo.exists()) logoImage = ImageIO.read(logo);
             } catch (Exception e) {}
@@ -195,9 +198,9 @@ public class SimpleRunnerGame extends JFrame {
             titleLabel = new JLabel(logoImage != null ? "" : "JavaDash");
             if (logoImage != null) {
                 // Logo art carries the branding; the label becomes the player greeting.
-                titleLabel.setFont(new Font("SansSerif", Font.BOLD, 22));
+                titleLabel.setFont(new Font("SansSerif", Font.BOLD, 20));
                 titleLabel.setForeground(new Color(150, 225, 255));
-                titleLabel.setBounds(30, 130, 360, 34);
+                titleLabel.setBounds(24, 128, 380, 30);
             } else {
                 titleLabel.setFont(new Font("SansSerif", Font.BOLD, 48));
                 titleLabel.setForeground(Color.WHITE);
@@ -206,41 +209,61 @@ public class SimpleRunnerGame extends JFrame {
             add(titleLabel);
 
             JPanel statsPanel = new JPanel();
-            statsPanel.setLayout(new GridLayout(3, 1, 0, 10));
+            statsPanel.setLayout(new GridLayout(3, 1, 0, 8));
             statsPanel.setOpaque(false);
-            statsPanel.setBounds(200, 150, 200, 150);
+            statsPanel.setBounds(238, 168, 168, 126);
 
-            scoreLabel = new JLabel("Score: 0");
-            scoreLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
-            scoreLabel.setForeground(Color.WHITE);
-            scoreLabel.setOpaque(true);
-            scoreLabel.setBackground(new Color(60, 120, 216, 200));
-            scoreLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
-
-            coinsLabel = new JLabel("Coins: 0");
-            coinsLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
-            coinsLabel.setForeground(Color.WHITE);
-            coinsLabel.setOpaque(true);
-            coinsLabel.setBackground(new Color(60, 120, 216, 200));
-            coinsLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
-
-            gamesLabel = new JLabel("Games: 0");
-            gamesLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
-            gamesLabel.setForeground(Color.WHITE);
-            gamesLabel.setOpaque(true);
-            gamesLabel.setBackground(new Color(60, 120, 216, 200));
-            gamesLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
-
+            scoreLabel = makeStat("Score: 0");
+            coinsLabel = makeStat("Coins: 0");
+            gamesLabel = makeStat("Games: 0");
             statsPanel.add(scoreLabel);
             statsPanel.add(coinsLabel);
             statsPanel.add(gamesLabel);
             add(statsPanel);
 
+            // ----- character picker -------------------------------------------
+            charNameLabel = new JLabel("", SwingConstants.CENTER);
+            charNameLabel.setFont(new Font("SansSerif", Font.BOLD, 15));
+            charNameLabel.setForeground(Color.WHITE);
+            charNameLabel.setBounds(30, 470, 240, 22);
+            add(charNameLabel);
+
+            JButton prevChar = arrowButton("<");
+            prevChar.setBounds(24, 388, 34, 40);
+            prevChar.addActionListener(e -> {
+                SoundManager.play("click");
+                CharacterManager.prevCharacter();
+                updateCharacterLabel();
+            });
+            add(prevChar);
+
+            JButton nextChar = arrowButton(">");
+            nextChar.setBounds(242, 388, 34, 40);
+            nextChar.addActionListener(e -> {
+                SoundManager.play("click");
+                CharacterManager.nextCharacter();
+                updateCharacterLabel();
+            });
+            add(nextChar);
+
+            JButton outfitBtn = new JButton("Change Colour");
+            outfitBtn.setFont(new Font("SansSerif", Font.BOLD, 13));
+            outfitBtn.setBackground(new Color(88, 72, 140));
+            outfitBtn.setForeground(Color.WHITE);
+            outfitBtn.setFocusPainted(false);
+            outfitBtn.setBounds(60, 500, 180, 32);
+            outfitBtn.addActionListener(e -> {
+                SoundManager.play("click");
+                CharacterManager.nextOutfit();
+                updateCharacterLabel();
+            });
+            add(outfitBtn);
+
             JButton startBtn = new JButton("PLAY");
-            startBtn.setFont(new Font("SansSerif", Font.BOLD, 36));
+            startBtn.setFont(new Font("SansSerif", Font.BOLD, 34));
             startBtn.setBackground(new Color(112, 196, 255));
             startBtn.setForeground(Color.WHITE);
-            startBtn.setBounds(90, 600, 240, 70);
+            startBtn.setBounds(90, 594, 240, 66);
             startBtn.setFocusPainted(false);
             startBtn.addActionListener(e -> showScreen("GAME"));
             add(startBtn);
@@ -260,27 +283,106 @@ public class SimpleRunnerGame extends JFrame {
                 showScreen("LOGIN");
             });
             add(switchBtn);
+
+            updateCharacterLabel();
+
+            // Slow, continuous turntable rotation so the static menu feels alive.
+            spinTimer = new Timer(1000 / 30, e -> {
+                spinAngle += 0.035;
+                if (spinAngle > Math.PI * 2) spinAngle -= Math.PI * 2;
+                repaint(20, 300, 268, 200);
+            });
+            spinTimer.start();
+        }
+
+        private JLabel makeStat(String text) {
+            JLabel l = new JLabel(text);
+            l.setFont(new Font("SansSerif", Font.BOLD, 16));
+            l.setForeground(Color.WHITE);
+            l.setOpaque(true);
+            l.setBackground(new Color(60, 120, 216, 200));
+            l.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+            return l;
+        }
+
+        private JButton arrowButton(String label) {
+            JButton b = new JButton(label);
+            b.setFont(new Font("SansSerif", Font.BOLD, 18));
+            b.setBackground(new Color(28, 48, 78));
+            b.setForeground(Color.WHITE);
+            b.setFocusPainted(false);
+            return b;
+        }
+
+        private void updateCharacterLabel() {
+            charNameLabel.setText(CharacterManager.current().name
+                + "   \u2022   " + CharacterManager.currentOutfit().name);
+            repaint();
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
             Graphics2D g2 = (Graphics2D) g;
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
             if (bgImage != null) {
                 g2.drawImage(bgImage, 0, 0, 420, 760, null);
             } else {
                 g2.setColor(new Color(40, 160, 220));
                 g2.fillRect(0, 0, 420, 760);
             }
-            
-            if (playerImage != null) {
-                g2.drawImage(playerImage, 40, 250, 140, 180, null);
-            }
+
+            drawSpinningCharacter(g2);
 
             if (logoImage != null) {
                 int logoW = 300;
                 int logoH = logoImage.getHeight(null) * logoW / Math.max(1, logoImage.getWidth(null));
-                g2.drawImage(logoImage, (420 - logoW) / 2, 40, logoW, logoH, null);
+                g2.drawImage(logoImage, (420 - logoW) / 2, 34, logoW, logoH, null);
+            }
+        }
+
+        /**
+         * Fake-3D turntable: the sprite is squeezed horizontally by cos(angle) and
+         * mirrored on the back half of the turn, so a flat 2D image reads as a
+         * figure slowly rotating on the spot. A soft ellipse shadow and a rim
+         * highlight on the leading edge sell the illusion.
+         */
+        private void drawSpinningCharacter(Graphics2D g2) {
+            Image sprite = CharacterManager.sprite();
+            if (sprite == null) return;
+
+            final int cx = 150;      // centre of the podium
+            final int baseY = 452;   // where the feet rest
+            final int h = 168;
+            int w = (int) (h * sprite.getWidth(null) / (double) Math.max(1, sprite.getHeight(null)));
+
+            double cos = Math.cos(spinAngle);
+            int drawW = Math.max(2, (int) Math.abs(w * cos));
+
+            // podium shadow, widening as the figure turns side-on
+            g2.setColor(new Color(0, 0, 0, 90));
+            g2.fillOval(cx - w / 2 - 6, baseY - 8, w + 12, 20);
+
+            Graphics2D cg = (Graphics2D) g2.create();
+            // Mirror the sprite while it faces away so the turn looks continuous
+            if (cos < 0) {
+                cg.translate(cx + drawW / 2.0, 0);
+                cg.scale(-1, 1);
+                cg.translate(-cx + drawW / 2.0, 0);
+            }
+            cg.drawImage(sprite, cx - drawW / 2, baseY - h, drawW, h, null);
+            cg.dispose();
+
+            // rim light on the edge coming toward the viewer
+            double edge = Math.abs(Math.sin(spinAngle));
+            if (edge > 0.15) {
+                g2.setComposite(AlphaComposite.getInstance(
+                    AlphaComposite.SRC_OVER, (float) (0.18 * edge)));
+                g2.setColor(new Color(180, 235, 255));
+                g2.fillRoundRect(cx - drawW / 2, baseY - h, Math.max(2, drawW / 6), h, 8, 8);
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f));
             }
         }
 
@@ -539,6 +641,7 @@ public class SimpleRunnerGame extends JFrame {
         private static final double SLIDE_DURATION = 0.6;      // seconds spent crouched
         private static final double SLIDE_HEIGHT_RATIO = 0.5;  // hitbox height while sliding
         private static final double JETPACK_HOVER_HEIGHT = 150.0; // px above the road while flying
+        private static final double ABILITY_DURATION = 10.0;      // every ability lasts 10s
         private static final double INITIAL_SPEED = 300.0; // px/s
         private static final double MAX_SPEED = 560.0; // px/s
         private static final int TARGET_FPS = 60;
@@ -574,6 +677,10 @@ public class SimpleRunnerGame extends JFrame {
         private double doubleScoreTimer = 0.0;
         private double jetpackTimer = 0.0;
         private double slowMoTimer = 0.0;
+
+        private static final double CELEBRATION_DURATION = 4.0;
+        private boolean newHighScore = false;
+        private double celebrationTimer = 0.0;
 
         private long score = 0;
         private int coinsCollected = 0;
@@ -836,9 +943,13 @@ public class SimpleRunnerGame extends JFrame {
             slowMoTimer = 0.0;
             lastSpawnedLane = 1;
             consecutiveLaneCount = 0;
+            safeLane = 1; // player starts in the middle lane, so start it clear
             lastTime = System.nanoTime();
             runStartTime = System.currentTimeMillis();
             gameOverMessage = "";
+            newHighScore = false;
+            celebrationTimer = 0.0;
+            SoundManager.stop("jetpack");
             SoundManager.loop("music");
         }
 
@@ -863,6 +974,10 @@ public class SimpleRunnerGame extends JFrame {
 
             if (gameState == GameState.PLAYING) {
                 updateGame(deltaTime);
+            } else if (gameState == GameState.GAME_OVER && celebrationTimer > 0.0) {
+                // Keep the confetti flying after the run has ended
+                celebrationTimer = Math.max(0.0, celebrationTimer - deltaTime);
+                updateParticles(deltaTime);
             }
             repaint();
         }
@@ -870,8 +985,9 @@ public class SimpleRunnerGame extends JFrame {
         private void updateGame(double deltaTime) {
             // Difficulty scaling: speed increases progressively based on distance
             obstacleSpeed = Math.min(650.0, INITIAL_SPEED + distance * 0.4);
-            if (boostTimer > 0.0) obstacleSpeed *= 1.5;  // speed boost power-up
-            if (slowMoTimer > 0.0) obstacleSpeed *= 0.5; // slow-motion power-up
+            if (boostTimer > 0.0) obstacleSpeed *= 1.5;   // speed boost power-up
+            if (jetpackTimer > 0.0) obstacleSpeed *= 1.8; // jetpack screams along
+            if (slowMoTimer > 0.0) obstacleSpeed *= 0.5;  // slow-motion power-up
             // Spawn interval decreases smoothly down to a fair floor of 0.38s
             spawnInterval = Math.max(0.38, 0.85 - (distance * 0.0005));
 
@@ -889,8 +1005,11 @@ public class SimpleRunnerGame extends JFrame {
             if (magnetTimer > 0.0) magnetTimer = Math.max(0.0, magnetTimer - deltaTime);
             if (boostTimer > 0.0) boostTimer = Math.max(0.0, boostTimer - deltaTime);
             if (doubleScoreTimer > 0.0) doubleScoreTimer = Math.max(0.0, doubleScoreTimer - deltaTime);
-            if (jetpackTimer > 0.0) jetpackTimer = Math.max(0.0, jetpackTimer - deltaTime);
             if (slowMoTimer > 0.0) slowMoTimer = Math.max(0.0, slowMoTimer - deltaTime);
+            if (jetpackTimer > 0.0) {
+                jetpackTimer = Math.max(0.0, jetpackTimer - deltaTime);
+                if (jetpackTimer == 0.0) SoundManager.stop("jetpack"); // landed
+            }
 
             // Real distance accumulation (time & speed based, not frame-rate dependent)
             distanceAccumulator += (obstacleSpeed * 0.02) * deltaTime;
@@ -907,6 +1026,11 @@ public class SimpleRunnerGame extends JFrame {
             // Spawning
             spawnTimer += deltaTime;
             if (spawnTimer >= spawnInterval) {
+                // Occasionally move the guaranteed escape route to a new lane so
+                // the player is not just holding one side of the road forever.
+                if (random.nextInt(100) < 12) {
+                    maybeRotateSafeLane();
+                }
                 spawnWorldObjects();
                 spawnTimer = 0.0;
             }
@@ -948,6 +1072,124 @@ public class SimpleRunnerGame extends JFrame {
             return doubleScoreTimer > 0.0 ? 2 : 1;
         }
 
+        /** Kick off the new-high-score fanfare: confetti burst plus the banner. */
+        private void triggerHighScoreCelebration() {
+            newHighScore = true;
+            celebrationTimer = CELEBRATION_DURATION;
+            SoundManager.play("powerup");
+
+            // Confetti fired up from the bottom of the screen in festive colours
+            Color[] confetti = {
+                new Color(255, 214, 66), new Color(255, 105, 140), new Color(112, 196, 255),
+                new Color(130, 240, 160), new Color(200, 140, 255), new Color(255, 160, 60)
+            };
+            for (int i = 0; i < 140; i++) {
+                double px = 30 + random.nextDouble() * Math.max(1, panelW - 60);
+                double py = panelH * (0.55 + random.nextDouble() * 0.5);
+                particles.add(new Particle(px, py,
+                    (random.nextDouble() - 0.5) * 260.0,
+                    -(200.0 + random.nextDouble() * 320.0),
+                    confetti[random.nextInt(confetti.length)],
+                    5.0 + random.nextDouble() * 6.0,
+                    1.1 + random.nextDouble() * 1.3));
+            }
+        }
+
+        /**
+         * Full-screen celebration drawn over the game-over overlay: a pulsing
+         * "NEW HIGH SCORE!" banner with radiating rays and a sweeping shine.
+         */
+        private void drawHighScoreCelebration(Graphics2D g2) {
+            double t = CELEBRATION_DURATION - celebrationTimer; // seconds elapsed
+            double pop = Math.min(1.0, t / 0.35);               // scale-in
+            double ease = 1.0 - Math.pow(1.0 - pop, 3);
+            double pulse = 1.0 + 0.05 * Math.sin(t * 7.0);
+
+            int cx = panelW / 2;
+            int cy = 210;
+
+            Graphics2D c = (Graphics2D) g2.create();
+            c.translate(cx, cy);
+            c.scale(ease * pulse, ease * pulse);
+
+            // rotating light rays behind the banner
+            c.setColor(new Color(255, 214, 66, 40));
+            for (int i = 0; i < 12; i++) {
+                double a = Math.toRadians(i * 30) + t * 0.6;
+                int x2 = (int) (Math.cos(a) * 250);
+                int y2 = (int) (Math.sin(a) * 250);
+                c.setStroke(new BasicStroke(16f));
+                c.drawLine(0, 0, x2, y2);
+            }
+
+            // banner plate
+            int bw = 300, bh = 74;
+            c.setColor(new Color(14, 22, 38, 235));
+            c.fillRoundRect(-bw / 2, -bh / 2, bw, bh, 20, 20);
+            c.setStroke(new BasicStroke(3f));
+            c.setColor(new Color(255, 214, 66));
+            c.drawRoundRect(-bw / 2, -bh / 2, bw, bh, 20, 20);
+
+            c.setFont(new Font("SansSerif", Font.BOLD, 27));
+            String title = "NEW HIGH SCORE!";
+            FontMetrics fm = c.getFontMetrics();
+            c.setColor(new Color(255, 214, 66));
+            c.drawString(title, -fm.stringWidth(title) / 2, -2);
+
+            c.setFont(new Font("SansSerif", Font.BOLD, 17));
+            String sub = String.format("%,d", score);
+            fm = c.getFontMetrics();
+            c.setColor(Color.WHITE);
+            c.drawString(sub, -fm.stringWidth(sub) / 2, 24);
+
+            // shine sweeping across the plate
+            double sweep = ((t * 0.9) % 1.6) / 1.6;
+            int sx = (int) (-bw / 2 + sweep * bw);
+            Shape oldClip = c.getClip();
+            c.setClip(new RoundRectangle2D.Double(-bw / 2.0, -bh / 2.0, bw, bh, 20, 20));
+            c.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.30f));
+            c.setColor(Color.WHITE);
+            c.fillPolygon(new int[]{sx, sx + 26, sx + 50, sx + 24},
+                          new int[]{-bh / 2, -bh / 2, bh / 2, bh / 2}, 4);
+            c.setClip(oldClip);
+
+            c.dispose();
+
+            // a few sparkle pops around the banner
+            if (random.nextInt(100) < 30) {
+                particles.add(new Particle(
+                    cx + (random.nextDouble() - 0.5) * 320,
+                    cy + (random.nextDouble() - 0.5) * 120,
+                    (random.nextDouble() - 0.5) * 60, -30 - random.nextDouble() * 40,
+                    new Color(255, 236, 150), 6, 0.6));
+            }
+        }
+
+        /**
+         * The lane currently reserved as an escape route. Nothing ever spawns into
+         * it, so there is always a clear path down the road.
+         *
+         * This is a spatial invariant rather than a timing prediction, which is
+         * what makes it reliable: obstacles travel at different speeds (oncoming
+         * traffic closes faster, and the world accelerates with distance), so any
+         * "will these two collide later?" estimate made at spawn time drifts and
+         * eventually lets an unavoidable wall through. Reserving a lane cannot.
+         */
+        private int safeLane = 1;
+
+        /**
+         * Rotate the escape lane, but only while the road above the player is
+         * clear, so the player is never asked to cross traffic to reach it.
+         */
+        private void maybeRotateSafeLane() {
+            for (Obstacle o : obstacles) {
+                if (o.getY() + o.getHeight() > -50.0 && o.getY() < GROUND_Y - 120.0) {
+                    return; // traffic still on the road: keep the current route
+                }
+            }
+            safeLane = random.nextInt(3);
+        }
+
         private void spawnWorldObjects() {
             // Guaranteed escape route and reaction window fairness:
             // 1. Never spawn 3 consecutive obstacles on the same lane
@@ -962,11 +1204,21 @@ public class SimpleRunnerGame extends JFrame {
             } else {
                 consecutiveLaneCount = 0;
             }
-            lastSpawnedLane = lane;
 
             // Obstacle height between 34px and 44px (generously cleared by ~90px jump apex)
             int obsHeight = 34 + random.nextInt(11);
             double spawnY = ROAD_Y - obsHeight - 12.0;
+
+            // --- Guarantee an escape route -------------------------------------
+            // Never spawn into the reserved safe lane, so a clear path always
+            // exists no matter how the speeds work out.
+            if (lane == safeLane) {
+                lane = (lane + 1 + random.nextInt(2)) % 3;
+            }
+            if (lane == safeLane) {
+                return; // nowhere else to put it; let the road breathe
+            }
+            lastSpawnedLane = lane;
 
             // Ensure obstacle stays strictly inside road boundaries (no longer clamped since laneCenterX is strict)
             double obsX = laneCenterX[lane];
@@ -1144,10 +1396,13 @@ public class SimpleRunnerGame extends JFrame {
                 while (iterator.hasNext()) {
                     Obstacle obstacle = iterator.next();
                     if (!obstacle.isHit() && playerHitbox.intersects(obstacle.getHitbox())) {
-                        // Types: 0: barrel, 1: barrier, 6: cone, 7: pothole are jumpable.
-                        // Vehicles (2,3,4,5,8) and all oncoming traffic (9-11) are not.
+                        // Types 0/1/6/7 (barrel, barrier, cone, pothole) are low enough
+                        // to hurdle, and so is oncoming traffic (9-11) - you can leap
+                        // over a bike or auto as it rushes at you. The parked vehicles
+                        // (2,3,4,5) and the long lorry (8) are too big to clear.
                         int type = obstacle.getType();
-                        boolean isJumpable = (type == 0 || type == 1 || type == 6 || type == 7);
+                        boolean isJumpable = (type == 0 || type == 1 || type == 6 || type == 7)
+                                || isOncoming(type);
 
                         // The jetpack flies clean over everything on the road.
                         if (jetpackTimer > 0.0) {
@@ -1183,6 +1438,7 @@ public class SimpleRunnerGame extends JFrame {
                         } else {
                             gameState = GameState.GAME_OVER;
                             SoundManager.stop("music");
+                            SoundManager.stop("jetpack");
                             SoundManager.play("gameover");
                             screenShakeTimer = 0.4;
                             shakeIntensity = 8.0;
@@ -1197,6 +1453,12 @@ public class SimpleRunnerGame extends JFrame {
                             PlayerInfo prevInfo = DbManager.getPlayer(currentUsername);
                             final int oldBest = (prevInfo != null) ? prevInfo.getBestScore() : 0;
                             
+                            // Celebrate immediately on a new best, without waiting for
+                            // the database round-trip (it still works fully offline).
+                            if (finalScore > oldBest && finalScore > 0) {
+                                triggerHighScoreCelebration();
+                            }
+
                             new SwingWorker<Boolean, Void>() {
                                 @Override
                                 protected Boolean doInBackground() {
@@ -1248,22 +1510,23 @@ public class SimpleRunnerGame extends JFrame {
                 if (playerHitbox.intersects(pu.getHitbox())) {
                     SoundManager.play("powerup");
                     if (pu.getType() == PowerUp.Type.SHIELD) {
-                        shieldTimer = 10.0;
+                        shieldTimer = ABILITY_DURATION;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "SHIELD!", new Color(112, 196, 255), 0.8));
                     } else if (pu.getType() == PowerUp.Type.MAGNET) {
-                        magnetTimer = 10.0;
+                        magnetTimer = ABILITY_DURATION;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "MAGNET!", new Color(255, 150, 50), 0.8));
                     } else if (pu.getType() == PowerUp.Type.BOOST) {
-                        boostTimer = 6.0;
+                        boostTimer = ABILITY_DURATION;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "BOOST!", new Color(255, 190, 60), 0.8));
                     } else if (pu.getType() == PowerUp.Type.DOUBLE_SCORE) {
-                        doubleScoreTimer = 10.0;
+                        doubleScoreTimer = ABILITY_DURATION;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "x2 SCORE!", new Color(190, 140, 255), 0.8));
                     } else if (pu.getType() == PowerUp.Type.JETPACK) {
-                        jetpackTimer = 7.0;
+                        jetpackTimer = ABILITY_DURATION;
+                        SoundManager.loop("jetpack"); // uuzzz thruster while flying
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "JETPACK!", new Color(120, 200, 255), 0.9));
                     } else if (pu.getType() == PowerUp.Type.SLOW_MO) {
-                        slowMoTimer = 6.0;
+                        slowMoTimer = ABILITY_DURATION;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "SLOW-MO!", new Color(90, 230, 220), 0.9));
                     }
                     score += 50;
@@ -1336,6 +1599,9 @@ public class SimpleRunnerGame extends JFrame {
 
             if (gameState == GameState.GAME_OVER) {
                 drawGameOverOverlay(g2);
+                if (newHighScore && celebrationTimer > 0.0) {
+                    drawHighScoreCelebration(g2);
+                }
             } else if (gameState == GameState.PAUSED) {
                 drawPausedOverlay(g2);
             }
@@ -1515,54 +1781,61 @@ public class SimpleRunnerGame extends JFrame {
             }
         }
         
+        /**
+         * Ability countdown bars pinned under the header at the top of the screen.
+         *
+         * Every active ability gets its icon plus a 10-second bar that drains left
+         * to right. Bars stack downward, and the bar flashes once it dips under
+         * two seconds so the player knows the ability is about to run out.
+         */
         private void drawPowerUpTimers(Graphics2D g2) {
-            int timerY = 60;
-            if (shieldTimer > 0.0) {
-                if (shieldImage != null) g2.drawImage(shieldImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(112, 196, 255));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((shieldTimer/10.0) * 70), 8);
+            double[] timers = { shieldTimer, magnetTimer, boostTimer, doubleScoreTimer, jetpackTimer, slowMoTimer };
+            Image[] icons = { shieldImage, magnetImage, boostImage, doubleScoreImage, jetpackImage, slowMoImage };
+            Color[] colors = {
+                new Color(112, 196, 255), new Color(255, 150, 50), new Color(255, 190, 60),
+                new Color(190, 140, 255), new Color(120, 200, 255), new Color(90, 230, 220)
+            };
+            String[] names = { "SHIELD", "MAGNET", "BOOST", "x2 SCORE", "JETPACK", "SLOW-MO" };
+
+            final int barW = 150, barH = 10, rowH = 24;
+            int x = (panelW - barW) / 2 + 12;   // centred, offset to leave room for the icon
+            int y = 52;                          // just below the header strip
+
+            for (int i = 0; i < timers.length; i++) {
+                if (timers[i] <= 0.0) continue;
+
+                double frac = Math.max(0.0, Math.min(1.0, timers[i] / ABILITY_DURATION));
+
+                // Fade the whole row in and out when the ability is nearly spent
+                float alpha = 1f;
+                if (timers[i] < 2.0) {
+                    alpha = 0.45f + 0.55f * (float) Math.abs(Math.sin(System.nanoTime() / 1.1e8));
+                }
+                Composite old = g2.getComposite();
+                g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
+
+                if (icons[i] != null) {
+                    g2.drawImage(icons[i], x - 24, y - 5, 19, 19, null);
+                }
+
+                // track
+                g2.setColor(new Color(10, 16, 28, 190));
+                g2.fillRoundRect(x, y, barW, barH, barH, barH);
+
+                // fill
+                g2.setColor(colors[i]);
+                int fillW = (int) (barW * frac);
+                if (fillW > 0) g2.fillRoundRect(x, y, fillW, barH, barH, barH);
+
+                // outline + label
+                g2.setColor(new Color(255, 255, 255, 150));
+                g2.drawRoundRect(x, y, barW, barH, barH, barH);
+                g2.setFont(new Font("SansSerif", Font.BOLD, 9));
                 g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
-                timerY += 30;
-            }
-            if (magnetTimer > 0.0) {
-                if (magnetImage != null) g2.drawImage(magnetImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(255, 150, 50));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((magnetTimer/10.0) * 70), 8);
-                g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
-                timerY += 30;
-            }
-            if (boostTimer > 0.0) {
-                if (boostImage != null) g2.drawImage(boostImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(255, 190, 60));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((boostTimer/6.0) * 70), 8);
-                g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
-                timerY += 30;
-            }
-            if (doubleScoreTimer > 0.0) {
-                if (doubleScoreImage != null) g2.drawImage(doubleScoreImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(190, 140, 255));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((doubleScoreTimer/10.0) * 70), 8);
-                g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
-                timerY += 30;
-            }
-            if (jetpackTimer > 0.0) {
-                if (jetpackImage != null) g2.drawImage(jetpackImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(120, 200, 255));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((jetpackTimer/7.0) * 70), 8);
-                g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
-                timerY += 30;
-            }
-            if (slowMoTimer > 0.0) {
-                if (slowMoImage != null) g2.drawImage(slowMoImage, panelW - 130, timerY, 20, 20, null);
-                g2.setColor(new Color(90, 230, 220));
-                g2.fillRect(panelW - 100, timerY + 6, (int)((slowMoTimer/6.0) * 70), 8);
-                g2.setColor(Color.WHITE);
-                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
+                g2.drawString(names[i] + "  " + String.format("%.1fs", timers[i]), x + 5, y + barH - 1);
+
+                g2.setComposite(old);
+                y += rowH;
             }
         }
 
@@ -1603,29 +1876,39 @@ public class SimpleRunnerGame extends JFrame {
             int drawX = -PLAYER_WIDTH / 2;
             int drawY = -PLAYER_HEIGHT;
 
-            Image imgToDraw = playerRunImage;
-            if (player.isOnGround() && Math.sin(runCycleTime * 0.04) > 0) {
+            // Selected character (tinted to the chosen outfit colour). The stock
+            // Runner keeps its full pose set; the others reuse the shared poses.
+            boolean stockRunner = CharacterManager.current().useDefaultPoses;
+            Image charSprite = CharacterManager.sprite();
+
+            Image imgToDraw = stockRunner ? playerRunImage : charSprite;
+            if (stockRunner && player.isOnGround() && Math.sin(runCycleTime * 0.04) > 0) {
                 imgToDraw = playerRunImage2;
             }
             
             double targetX = laneCenterX[player.getLane()] - (PLAYER_WIDTH / 2.0);
             boolean sliding = player.isSliding();
-            if (player.isFlying()) {
-                imgToDraw = playerJumpImage; // tucked pose reads well while hovering
-            } else if (!player.isOnGround()) {
-                imgToDraw = playerJumpImage;
-            } else if (sliding && playerSlideImage != null) {
-                imgToDraw = playerSlideImage;
-            } else if (player.getX() < targetX - 1.0) {
-                imgToDraw = playerLeftImage;
-            } else if (player.getX() > targetX + 1.0) {
-                imgToDraw = playerRightImage;
+            if (stockRunner) {
+                // The original runner has dedicated art for every pose.
+                if (player.isFlying() || !player.isOnGround()) {
+                    imgToDraw = playerJumpImage;
+                } else if (sliding && playerSlideImage != null) {
+                    imgToDraw = playerSlideImage;
+                } else if (player.getX() < targetX - 1.0) {
+                    imgToDraw = playerLeftImage;
+                } else if (player.getX() > targetX + 1.0) {
+                    imgToDraw = playerRightImage;
+                }
+            } else if (sliding) {
+                // Other characters have one sprite: squash it to sell the slide.
+                imgToDraw = charSprite;
             }
 
             if (imgToDraw != null) {
-                if (sliding && imgToDraw == playerSlideImage) {
-                    // The slide art is wide and low: keep it grounded and centred.
-                    int slideW = (int) (PLAYER_WIDTH * 1.5);
+                if (sliding) {
+                    // Wide and low, kept grounded and centred. The stock runner has
+                    // real slide art; other characters get squashed into the pose.
+                    int slideW = (int) (PLAYER_WIDTH * (imgToDraw == playerSlideImage ? 1.5 : 1.15));
                     int slideH = (int) (PLAYER_HEIGHT * SLIDE_HEIGHT_RATIO);
                     playerG2.drawImage(imgToDraw, -slideW / 2, -slideH, slideW, slideH, null);
                 } else {
