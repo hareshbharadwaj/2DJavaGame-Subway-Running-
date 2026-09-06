@@ -176,8 +176,8 @@ public class SimpleRunnerGame extends JFrame {
         private JLabel coinsLabel;
         private JLabel gamesLabel;
         private JLabel titleLabel;
-        private JLabel charNameLabel;
         private Image bgImage;
+        private Image playerImage;
         private Image logoImage;
 
         /** Drives the slow turntable spin of the character on the menu. */
@@ -191,6 +191,7 @@ public class SimpleRunnerGame extends JFrame {
             try {
                 File menuBg = new File("assets/ui/home_bg.png");
                 bgImage = ImageIO.read(menuBg.exists() ? menuBg : new File("assets/environment/background.png"));
+                playerImage = ImageIO.read(new File("assets/player/player_run (2).png"));
                 File logo = new File("assets/ui/logo.png");
                 if (logo.exists()) logoImage = ImageIO.read(logo);
             } catch (Exception e) {}
@@ -221,44 +222,6 @@ public class SimpleRunnerGame extends JFrame {
             statsPanel.add(gamesLabel);
             add(statsPanel);
 
-            // ----- character picker -------------------------------------------
-            charNameLabel = new JLabel("", SwingConstants.CENTER);
-            charNameLabel.setFont(new Font("SansSerif", Font.BOLD, 15));
-            charNameLabel.setForeground(Color.WHITE);
-            charNameLabel.setBounds(30, 470, 240, 22);
-            add(charNameLabel);
-
-            JButton prevChar = arrowButton("<");
-            prevChar.setBounds(24, 388, 34, 40);
-            prevChar.addActionListener(e -> {
-                SoundManager.play("click");
-                CharacterManager.prevCharacter();
-                updateCharacterLabel();
-            });
-            add(prevChar);
-
-            JButton nextChar = arrowButton(">");
-            nextChar.setBounds(242, 388, 34, 40);
-            nextChar.addActionListener(e -> {
-                SoundManager.play("click");
-                CharacterManager.nextCharacter();
-                updateCharacterLabel();
-            });
-            add(nextChar);
-
-            JButton outfitBtn = new JButton("Change Colour");
-            outfitBtn.setFont(new Font("SansSerif", Font.BOLD, 13));
-            outfitBtn.setBackground(new Color(88, 72, 140));
-            outfitBtn.setForeground(Color.WHITE);
-            outfitBtn.setFocusPainted(false);
-            outfitBtn.setBounds(60, 500, 180, 32);
-            outfitBtn.addActionListener(e -> {
-                SoundManager.play("click");
-                CharacterManager.nextOutfit();
-                updateCharacterLabel();
-            });
-            add(outfitBtn);
-
             JButton startBtn = new JButton("PLAY");
             startBtn.setFont(new Font("SansSerif", Font.BOLD, 34));
             startBtn.setBackground(new Color(112, 196, 255));
@@ -284,8 +247,6 @@ public class SimpleRunnerGame extends JFrame {
             });
             add(switchBtn);
 
-            updateCharacterLabel();
-
             // Slow, continuous turntable rotation so the static menu feels alive.
             spinTimer = new Timer(1000 / 30, e -> {
                 spinAngle += 0.035;
@@ -303,21 +264,6 @@ public class SimpleRunnerGame extends JFrame {
             l.setBackground(new Color(60, 120, 216, 200));
             l.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
             return l;
-        }
-
-        private JButton arrowButton(String label) {
-            JButton b = new JButton(label);
-            b.setFont(new Font("SansSerif", Font.BOLD, 18));
-            b.setBackground(new Color(28, 48, 78));
-            b.setForeground(Color.WHITE);
-            b.setFocusPainted(false);
-            return b;
-        }
-
-        private void updateCharacterLabel() {
-            charNameLabel.setText(CharacterManager.current().name
-                + "   \u2022   " + CharacterManager.currentOutfit().name);
-            repaint();
         }
 
         @Override
@@ -350,7 +296,7 @@ public class SimpleRunnerGame extends JFrame {
          * highlight on the leading edge sell the illusion.
          */
         private void drawSpinningCharacter(Graphics2D g2) {
-            Image sprite = CharacterManager.sprite();
+            Image sprite = playerImage;
             if (sprite == null) return;
 
             final int cx = 150;      // centre of the podium
@@ -678,9 +624,8 @@ public class SimpleRunnerGame extends JFrame {
         private double jetpackTimer = 0.0;
         private double slowMoTimer = 0.0;
 
-        private static final double CELEBRATION_DURATION = 4.0;
         private boolean newHighScore = false;
-        private double celebrationTimer = 0.0;
+        private long celebrationStart = 0L;
 
         private long score = 0;
         private int coinsCollected = 0;
@@ -948,7 +893,7 @@ public class SimpleRunnerGame extends JFrame {
             runStartTime = System.currentTimeMillis();
             gameOverMessage = "";
             newHighScore = false;
-            celebrationTimer = 0.0;
+            celebrationStart = 0L;
             SoundManager.stop("jetpack");
             SoundManager.loop("music");
         }
@@ -974,10 +919,9 @@ public class SimpleRunnerGame extends JFrame {
 
             if (gameState == GameState.PLAYING) {
                 updateGame(deltaTime);
-            } else if (gameState == GameState.GAME_OVER && celebrationTimer > 0.0) {
-                // Keep the confetti flying after the run has ended
-                celebrationTimer = Math.max(0.0, celebrationTimer - deltaTime);
-                updateParticles(deltaTime);
+            } else if (gameState == GameState.GAME_OVER && newHighScore) {
+                // Keep the banner pulsing and the confetti falling after the run
+                updateCelebration(deltaTime);
             }
             repaint();
         }
@@ -1072,96 +1016,135 @@ public class SimpleRunnerGame extends JFrame {
             return doubleScoreTimer > 0.0 ? 2 : 1;
         }
 
+        /** Confetti colours reused by the burst and the ongoing shower. */
+        private static final Color[] CONFETTI_COLORS = {
+            new Color(255, 214, 66), new Color(255, 105, 140), new Color(112, 196, 255),
+            new Color(130, 240, 160), new Color(200, 140, 255), new Color(255, 160, 60)
+        };
+
         /** Kick off the new-high-score fanfare: confetti burst plus the banner. */
         private void triggerHighScoreCelebration() {
             newHighScore = true;
-            celebrationTimer = CELEBRATION_DURATION;
+            celebrationStart = System.nanoTime();
             SoundManager.play("powerup");
 
-            // Confetti fired up from the bottom of the screen in festive colours
-            Color[] confetti = {
-                new Color(255, 214, 66), new Color(255, 105, 140), new Color(112, 196, 255),
-                new Color(130, 240, 160), new Color(200, 140, 255), new Color(255, 160, 60)
-            };
-            for (int i = 0; i < 140; i++) {
-                double px = 30 + random.nextDouble() * Math.max(1, panelW - 60);
+            // Big opening burst fired up from the lower half of the screen
+            for (int i = 0; i < 190; i++) {
+                double px = 20 + random.nextDouble() * Math.max(1, panelW - 40);
                 double py = panelH * (0.55 + random.nextDouble() * 0.5);
                 particles.add(new Particle(px, py,
-                    (random.nextDouble() - 0.5) * 260.0,
-                    -(200.0 + random.nextDouble() * 320.0),
-                    confetti[random.nextInt(confetti.length)],
-                    5.0 + random.nextDouble() * 6.0,
-                    1.1 + random.nextDouble() * 1.3));
+                    (random.nextDouble() - 0.5) * 300.0,
+                    -(240.0 + random.nextDouble() * 360.0),
+                    CONFETTI_COLORS[random.nextInt(CONFETTI_COLORS.length)],
+                    5.0 + random.nextDouble() * 7.0,
+                    1.2 + random.nextDouble() * 1.6));
             }
         }
 
+        /** Keeps confetti raining down for as long as the banner is on screen. */
+        private void updateCelebration(double deltaTime) {
+            // steady shower from above so the screen never goes flat
+            if (random.nextInt(100) < 55) {
+                particles.add(new Particle(
+                    random.nextDouble() * Math.max(1, panelW),
+                    -12.0,
+                    (random.nextDouble() - 0.5) * 70.0,
+                    70.0 + random.nextDouble() * 110.0,
+                    CONFETTI_COLORS[random.nextInt(CONFETTI_COLORS.length)],
+                    4.0 + random.nextDouble() * 6.0,
+                    2.0 + random.nextDouble() * 1.5));
+            }
+            updateParticles(deltaTime);
+        }
+
         /**
-         * Full-screen celebration drawn over the game-over overlay: a pulsing
-         * "NEW HIGH SCORE!" banner with radiating rays and a sweeping shine.
+         * Full-screen celebration drawn over the game-over overlay: a starburst,
+         * rotating rays, and a pulsing "NEW HIGH SCORE!" banner with a sweeping
+         * shine. The banner stays up for the whole game-over screen; only the
+         * scale-in and burst are time-based.
          */
         private void drawHighScoreCelebration(Graphics2D g2) {
-            double t = CELEBRATION_DURATION - celebrationTimer; // seconds elapsed
-            double pop = Math.min(1.0, t / 0.35);               // scale-in
-            double ease = 1.0 - Math.pow(1.0 - pop, 3);
-            double pulse = 1.0 + 0.05 * Math.sin(t * 7.0);
+            double t = (System.nanoTime() - celebrationStart) / 1e9; // seconds since trigger
+            double pop = Math.min(1.0, t / 0.4);
+            double ease = 1.0 - Math.pow(1.0 - pop, 3);      // springy scale-in
+            double overshoot = 1.0 + 0.12 * Math.sin(Math.min(Math.PI, t * 6.5));
+            double pulse = 1.0 + 0.04 * Math.sin(t * 5.0);
 
             int cx = panelW / 2;
-            int cy = 210;
+            int cy = 200;
+
+            // dim the scene slightly so the banner reads clearly
+            Composite prev = g2.getComposite();
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.30f));
+            g2.setColor(new Color(8, 12, 24));
+            g2.fillRect(0, 0, panelW, panelH);
+            g2.setComposite(prev);
 
             Graphics2D c = (Graphics2D) g2.create();
+            c.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             c.translate(cx, cy);
-            c.scale(ease * pulse, ease * pulse);
+            c.scale(ease * overshoot * pulse, ease * overshoot * pulse);
 
-            // rotating light rays behind the banner
-            c.setColor(new Color(255, 214, 66, 40));
-            for (int i = 0; i < 12; i++) {
-                double a = Math.toRadians(i * 30) + t * 0.6;
-                int x2 = (int) (Math.cos(a) * 250);
-                int y2 = (int) (Math.sin(a) * 250);
-                c.setStroke(new BasicStroke(16f));
-                c.drawLine(0, 0, x2, y2);
+            // rotating light rays
+            c.setStroke(new BasicStroke(18f));
+            c.setColor(new Color(255, 214, 66, 38));
+            for (int i = 0; i < 14; i++) {
+                double a = Math.toRadians(i * (360.0 / 14)) + t * 0.5;
+                c.drawLine(0, 0, (int) (Math.cos(a) * 260), (int) (Math.sin(a) * 260));
+            }
+
+            // expanding starburst ring from the moment of the record
+            double ring = Math.min(1.0, t / 0.8);
+            if (ring < 1.0) {
+                int r = (int) (40 + ring * 210);
+                c.setStroke(new BasicStroke((float) (9 * (1 - ring))));
+                c.setColor(new Color(255, 236, 150, (int) (190 * (1 - ring))));
+                c.drawOval(-r, -r, r * 2, r * 2);
             }
 
             // banner plate
-            int bw = 300, bh = 74;
-            c.setColor(new Color(14, 22, 38, 235));
-            c.fillRoundRect(-bw / 2, -bh / 2, bw, bh, 20, 20);
-            c.setStroke(new BasicStroke(3f));
+            int bw = 312, bh = 82;
+            c.setColor(new Color(14, 22, 38, 240));
+            c.fillRoundRect(-bw / 2, -bh / 2, bw, bh, 22, 22);
+            c.setStroke(new BasicStroke(3.4f));
             c.setColor(new Color(255, 214, 66));
-            c.drawRoundRect(-bw / 2, -bh / 2, bw, bh, 20, 20);
+            c.drawRoundRect(-bw / 2, -bh / 2, bw, bh, 22, 22);
 
+            // title with a soft glow
             c.setFont(new Font("SansSerif", Font.BOLD, 27));
             String title = "NEW HIGH SCORE!";
             FontMetrics fm = c.getFontMetrics();
-            c.setColor(new Color(255, 214, 66));
-            c.drawString(title, -fm.stringWidth(title) / 2, -2);
+            int tw = fm.stringWidth(title);
+            c.setColor(new Color(255, 180, 40, 90));
+            c.drawString(title, -tw / 2 + 1, -3);
+            c.setColor(new Color(255, 224, 96));
+            c.drawString(title, -tw / 2, -5);
 
-            c.setFont(new Font("SansSerif", Font.BOLD, 17));
-            String sub = String.format("%,d", score);
+            c.setFont(new Font("SansSerif", Font.BOLD, 19));
+            String sub = String.format("%,d points", score);
             fm = c.getFontMetrics();
             c.setColor(Color.WHITE);
-            c.drawString(sub, -fm.stringWidth(sub) / 2, 24);
+            c.drawString(sub, -fm.stringWidth(sub) / 2, 25);
 
             // shine sweeping across the plate
-            double sweep = ((t * 0.9) % 1.6) / 1.6;
-            int sx = (int) (-bw / 2 + sweep * bw);
+            double sweep = ((t * 0.85) % 1.7) / 1.7;
+            int sx = (int) (-bw / 2 + sweep * (bw + 60) - 30);
             Shape oldClip = c.getClip();
-            c.setClip(new RoundRectangle2D.Double(-bw / 2.0, -bh / 2.0, bw, bh, 20, 20));
-            c.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.30f));
+            c.setClip(new RoundRectangle2D.Double(-bw / 2.0, -bh / 2.0, bw, bh, 22, 22));
+            c.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.28f));
             c.setColor(Color.WHITE);
-            c.fillPolygon(new int[]{sx, sx + 26, sx + 50, sx + 24},
+            c.fillPolygon(new int[]{sx, sx + 26, sx + 52, sx + 26},
                           new int[]{-bh / 2, -bh / 2, bh / 2, bh / 2}, 4);
             c.setClip(oldClip);
-
             c.dispose();
 
-            // a few sparkle pops around the banner
-            if (random.nextInt(100) < 30) {
+            // twinkles around the banner
+            if (random.nextInt(100) < 40) {
                 particles.add(new Particle(
-                    cx + (random.nextDouble() - 0.5) * 320,
-                    cy + (random.nextDouble() - 0.5) * 120,
-                    (random.nextDouble() - 0.5) * 60, -30 - random.nextDouble() * 40,
-                    new Color(255, 236, 150), 6, 0.6));
+                    cx + (random.nextDouble() - 0.5) * 330,
+                    cy + (random.nextDouble() - 0.5) * 130,
+                    (random.nextDouble() - 0.5) * 70, -25 - random.nextDouble() * 45,
+                    new Color(255, 240, 170), 6, 0.7));
             }
         }
 
@@ -1599,7 +1582,7 @@ public class SimpleRunnerGame extends JFrame {
 
             if (gameState == GameState.GAME_OVER) {
                 drawGameOverOverlay(g2);
-                if (newHighScore && celebrationTimer > 0.0) {
+                if (newHighScore) {
                     drawHighScoreCelebration(g2);
                 }
             } else if (gameState == GameState.PAUSED) {
@@ -1876,39 +1859,27 @@ public class SimpleRunnerGame extends JFrame {
             int drawX = -PLAYER_WIDTH / 2;
             int drawY = -PLAYER_HEIGHT;
 
-            // Selected character (tinted to the chosen outfit colour). The stock
-            // Runner keeps its full pose set; the others reuse the shared poses.
-            boolean stockRunner = CharacterManager.current().useDefaultPoses;
-            Image charSprite = CharacterManager.sprite();
-
-            Image imgToDraw = stockRunner ? playerRunImage : charSprite;
-            if (stockRunner && player.isOnGround() && Math.sin(runCycleTime * 0.04) > 0) {
+            Image imgToDraw = playerRunImage;
+            if (player.isOnGround() && Math.sin(runCycleTime * 0.04) > 0) {
                 imgToDraw = playerRunImage2;
             }
             
             double targetX = laneCenterX[player.getLane()] - (PLAYER_WIDTH / 2.0);
             boolean sliding = player.isSliding();
-            if (stockRunner) {
-                // The original runner has dedicated art for every pose.
-                if (player.isFlying() || !player.isOnGround()) {
-                    imgToDraw = playerJumpImage;
-                } else if (sliding && playerSlideImage != null) {
-                    imgToDraw = playerSlideImage;
-                } else if (player.getX() < targetX - 1.0) {
-                    imgToDraw = playerLeftImage;
-                } else if (player.getX() > targetX + 1.0) {
-                    imgToDraw = playerRightImage;
-                }
-            } else if (sliding) {
-                // Other characters have one sprite: squash it to sell the slide.
-                imgToDraw = charSprite;
+            if (player.isFlying() || !player.isOnGround()) {
+                imgToDraw = playerJumpImage;
+            } else if (sliding && playerSlideImage != null) {
+                imgToDraw = playerSlideImage;
+            } else if (player.getX() < targetX - 1.0) {
+                imgToDraw = playerLeftImage;
+            } else if (player.getX() > targetX + 1.0) {
+                imgToDraw = playerRightImage;
             }
 
             if (imgToDraw != null) {
-                if (sliding) {
-                    // Wide and low, kept grounded and centred. The stock runner has
-                    // real slide art; other characters get squashed into the pose.
-                    int slideW = (int) (PLAYER_WIDTH * (imgToDraw == playerSlideImage ? 1.5 : 1.15));
+                if (sliding && imgToDraw == playerSlideImage) {
+                    // The slide art is wide and low: keep it grounded and centred.
+                    int slideW = (int) (PLAYER_WIDTH * 1.5);
                     int slideH = (int) (PLAYER_HEIGHT * SLIDE_HEIGHT_RATIO);
                     playerG2.drawImage(imgToDraw, -slideW / 2, -slideH, slideW, slideH, null);
                 } else {
