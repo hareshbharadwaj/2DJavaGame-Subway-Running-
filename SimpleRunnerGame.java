@@ -392,13 +392,42 @@ public class SimpleRunnerGame extends JFrame {
         private static BufferedImage backgroundLeftFallback;
         private static BufferedImage backgroundRightFallback;
         private static Image roadImage;
-        private static Image[] obstacleImages = new Image[9];
+        // Obstacle type ids. 0-8 are static hazards that sit on the road and scroll
+        // toward the player; 9-11 are oncoming traffic that DRIVES at the player.
+        private static final int OBS_TRUCK_LONG = 8;
+        private static final int OBS_BIKE_ONCOMING = 9;
+        private static final int OBS_AUTO_ONCOMING = 10;
+        private static final int OBS_CAR_ONCOMING = 11;
+        private static final int OBSTACLE_TYPE_COUNT = 12;
+        private static final int STATIC_OBSTACLE_COUNT = 9; // types 0-8
+
+        /**
+         * Extra closing speed (px/s) for vehicles driving toward the player, added on
+         * top of the world scroll. Kept modest so the reaction window stays fair:
+         * at top speed the quickest bike still gives roughly a second to change lane.
+         */
+        private static double oncomingClosingSpeed(int type) {
+            switch (type) {
+                case OBS_BIKE_ONCOMING: return 200.0; // bikes weave in fastest
+                case OBS_AUTO_ONCOMING: return 130.0; // autos putter along
+                case OBS_CAR_ONCOMING:  return 170.0;
+                default: return 0.0;
+            }
+        }
+
+        private static boolean isOncoming(int type) {
+            return type >= OBS_BIKE_ONCOMING && type <= OBS_CAR_ONCOMING;
+        }
+
+        private static Image[] obstacleImages = new Image[OBSTACLE_TYPE_COUNT];
         private static Image[] coinImages = new Image[8];
         private static Image heartImage;
         private static Image shieldImage;
         private static Image magnetImage;
         private static Image boostImage;
         private static Image doubleScoreImage;
+        private static Image jetpackImage;
+        private static Image slowMoImage;
         private static Image logoImage;
 
         private static Image safeLoadImage(String path) {
@@ -446,8 +475,11 @@ public class SimpleRunnerGame extends JFrame {
             barricadeRight = safeLoadBufferedImage("assets/environment/barricade_raw right.png");
             roadImage = safeLoadImage("assets/environment/road (1).png");
             
-            // Slots 3 and 7 now use dedicated art instead of duplicating car_blue/barrier.
-            String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_green", "car_red (1)", "car_taxi (1)", "cone (1)", "pothole", "truck (1)"};
+            // Slots 3 and 7 use dedicated art instead of duplicating car_blue/barrier.
+            // Slot 8 is the long articulated lorry; 9-11 are the oncoming vehicles.
+            String[] obsNames = {"barrel (1)", "barrier (1)", "car_blue (1)", "car_green", "car_red (1)",
+                                 "car_taxi (1)", "cone (1)", "pothole", "truck_long",
+                                 "bike_oncoming", "auto_oncoming", "car_oncoming"};
             for(int i = 0; i < obsNames.length; i++) {
                 obstacleImages[i] = safeLoadImage("assets/obstacles/" + obsNames[i] + ".png");
                 if (obstacleImages[i] == null) {
@@ -463,6 +495,8 @@ public class SimpleRunnerGame extends JFrame {
             magnetImage = safeLoadImage("assets/ui/magnet (1).png");
             boostImage = safeLoadImage("assets/ui/boost.png");
             doubleScoreImage = safeLoadImage("assets/ui/x2.png");
+            jetpackImage = safeLoadImage("assets/ui/jetpack.png");
+            slowMoImage = safeLoadImage("assets/ui/slowmo.png");
             logoImage = safeLoadImage("assets/ui/logo.png");
         }
 
@@ -504,6 +538,7 @@ public class SimpleRunnerGame extends JFrame {
         private static final double MAX_JUMP_APEX = (JUMP_STRENGTH * JUMP_STRENGTH) / (2.0 * GRAVITY);
         private static final double SLIDE_DURATION = 0.6;      // seconds spent crouched
         private static final double SLIDE_HEIGHT_RATIO = 0.5;  // hitbox height while sliding
+        private static final double JETPACK_HOVER_HEIGHT = 150.0; // px above the road while flying
         private static final double INITIAL_SPEED = 300.0; // px/s
         private static final double MAX_SPEED = 560.0; // px/s
         private static final int TARGET_FPS = 60;
@@ -537,6 +572,8 @@ public class SimpleRunnerGame extends JFrame {
         private double magnetTimer = 0.0;
         private double boostTimer = 0.0;
         private double doubleScoreTimer = 0.0;
+        private double jetpackTimer = 0.0;
+        private double slowMoTimer = 0.0;
 
         private long score = 0;
         private int coinsCollected = 0;
@@ -795,6 +832,8 @@ public class SimpleRunnerGame extends JFrame {
             magnetTimer = 0.0;
             boostTimer = 0.0;
             doubleScoreTimer = 0.0;
+            jetpackTimer = 0.0;
+            slowMoTimer = 0.0;
             lastSpawnedLane = 1;
             consecutiveLaneCount = 0;
             lastTime = System.nanoTime();
@@ -831,7 +870,8 @@ public class SimpleRunnerGame extends JFrame {
         private void updateGame(double deltaTime) {
             // Difficulty scaling: speed increases progressively based on distance
             obstacleSpeed = Math.min(650.0, INITIAL_SPEED + distance * 0.4);
-            if (boostTimer > 0.0) obstacleSpeed *= 1.5; // speed boost power-up
+            if (boostTimer > 0.0) obstacleSpeed *= 1.5;  // speed boost power-up
+            if (slowMoTimer > 0.0) obstacleSpeed *= 0.5; // slow-motion power-up
             // Spawn interval decreases smoothly down to a fair floor of 0.38s
             spawnInterval = Math.max(0.38, 0.85 - (distance * 0.0005));
 
@@ -849,6 +889,8 @@ public class SimpleRunnerGame extends JFrame {
             if (magnetTimer > 0.0) magnetTimer = Math.max(0.0, magnetTimer - deltaTime);
             if (boostTimer > 0.0) boostTimer = Math.max(0.0, boostTimer - deltaTime);
             if (doubleScoreTimer > 0.0) doubleScoreTimer = Math.max(0.0, doubleScoreTimer - deltaTime);
+            if (jetpackTimer > 0.0) jetpackTimer = Math.max(0.0, jetpackTimer - deltaTime);
+            if (slowMoTimer > 0.0) slowMoTimer = Math.max(0.0, slowMoTimer - deltaTime);
 
             // Real distance accumulation (time & speed based, not frame-rate dependent)
             distanceAccumulator += (obstacleSpeed * 0.02) * deltaTime;
@@ -870,7 +912,19 @@ public class SimpleRunnerGame extends JFrame {
             }
 
             // Entity Updates
+            player.setFlying(jetpackTimer > 0.0);
             player.update(deltaTime);
+
+            // Jetpack exhaust trail
+            if (jetpackTimer > 0.0) {
+                for (int i = 0; i < 2; i++) {
+                    particles.add(new Particle(player.getX() + 14 + random.nextInt(16),
+                        player.getY() + PLAYER_HEIGHT - 4,
+                        (random.nextDouble() - 0.5) * 40.0, 90.0 + random.nextDouble() * 70.0,
+                        i == 0 ? new Color(255, 190, 70, 220) : new Color(255, 110, 40, 200),
+                        6.0 + random.nextDouble() * 4.0, 0.35 + random.nextDouble() * 0.25));
+                }
+            }
             // Dust particles when grounded
             if (player.isOnGround() && random.nextInt(100) < 30) {
                 particles.add(new Particle(player.getX() + 10 + random.nextInt(24), player.getY() + PLAYER_HEIGHT - 2, 
@@ -916,24 +970,41 @@ public class SimpleRunnerGame extends JFrame {
 
             // Ensure obstacle stays strictly inside road boundaries (no longer clamped since laneCenterX is strict)
             double obsX = laneCenterX[lane];
-            int obsType = random.nextInt(9); // 0 to 8
-            
+            // Oncoming traffic appears once the run is under way and ramps up with distance.
+            int oncomingChance = distance < 150 ? 0 : Math.min(30, 8 + (distance - 150) / 60);
+            boolean spawnOncoming = random.nextInt(100) < oncomingChance;
+
+            int obsType;
+            if (spawnOncoming) {
+                int[] pool = {OBS_BIKE_ONCOMING, OBS_AUTO_ONCOMING, OBS_CAR_ONCOMING};
+                obsType = pool[random.nextInt(pool.length)];
+            } else {
+                obsType = random.nextInt(STATIC_OBSTACLE_COUNT); // 0 to 8
+            }
+
             double w = 44.0;
             double h = obsHeight;
             if (obstacleImages[obsType] != null) {
-                int imgW = obstacleImages[obsType] != null ? obstacleImages[obsType].getWidth(null) : 40;
-                int imgH = obstacleImages[obsType] != null ? obstacleImages[obsType].getHeight(null) : 40;
+                int imgW = obstacleImages[obsType].getWidth(null);
+                int imgH = obstacleImages[obsType].getHeight(null);
                 if (imgW > 0 && imgH > 0) {
                     // Apply a constant scale factor to all obstacles to preserve their relative sizes
                     double scale = 0.35; // Adjust this if they are too big/small globally
                     w = imgW * scale;
                     h = imgH * scale;
-                    
-                    // Cap width just in case it's still too large for the lane
-                    if (w > 70.0) {
-                        scale = 70.0 / imgW;
-                        w = 70.0;
+
+                    // Cap width just in case it's still too large for the lane.
+                    double maxW = (obsType == OBS_BIKE_ONCOMING) ? 40.0 : 70.0;
+                    if (w > maxW) {
+                        scale = maxW / imgW;
+                        w = maxW;
                         h = imgH * scale;
+                    }
+
+                    // The articulated lorry is deliberately long: it stretches well down
+                    // the lane, so it takes noticeably longer to drive past the player.
+                    if (obsType == OBS_TRUCK_LONG) {
+                        h = Math.min(h, 300.0);
                     }
                 }
             }
@@ -1073,10 +1144,16 @@ public class SimpleRunnerGame extends JFrame {
                 while (iterator.hasNext()) {
                     Obstacle obstacle = iterator.next();
                     if (!obstacle.isHit() && playerHitbox.intersects(obstacle.getHitbox())) {
-                        // Types: 0: barrel, 1: barrier, 6: cone, 7: pothole are jumpable. Vehicles (2,3,4,5,8) are not.
+                        // Types: 0: barrel, 1: barrier, 6: cone, 7: pothole are jumpable.
+                        // Vehicles (2,3,4,5,8) and all oncoming traffic (9-11) are not.
                         int type = obstacle.getType();
                         boolean isJumpable = (type == 0 || type == 1 || type == 6 || type == 7);
-                        
+
+                        // The jetpack flies clean over everything on the road.
+                        if (jetpackTimer > 0.0) {
+                            continue;
+                        }
+
                         if (isJumpable) {
                             double heightAboveGround = GROUND_Y - player.getY();
                             if (heightAboveGround > 30.0) {
@@ -1182,6 +1259,12 @@ public class SimpleRunnerGame extends JFrame {
                     } else if (pu.getType() == PowerUp.Type.DOUBLE_SCORE) {
                         doubleScoreTimer = 10.0;
                         floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "x2 SCORE!", new Color(190, 140, 255), 0.8));
+                    } else if (pu.getType() == PowerUp.Type.JETPACK) {
+                        jetpackTimer = 7.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "JETPACK!", new Color(120, 200, 255), 0.9));
+                    } else if (pu.getType() == PowerUp.Type.SLOW_MO) {
+                        slowMoTimer = 6.0;
+                        floatingTexts.add(new FloatingText(pu.getX() - 10, pu.getY() - 8, "SLOW-MO!", new Color(90, 230, 220), 0.9));
                     }
                     score += 50;
                     for (int i=0; i<8; i++) particles.add(new Particle(pu.getX()+10, pu.getY()+10, (random.nextDouble()-0.5)*120, (random.nextDouble()-0.5)*120, Color.WHITE, 6, 0.5));
@@ -1237,6 +1320,13 @@ public class SimpleRunnerGame extends JFrame {
             drawPlayer(g2);
             drawFloatingTexts(g2);
             drawParticles(g2);
+
+            // Slow-motion tints the whole scene a cool cyan
+            if (slowMoTimer > 0.0) {
+                g2.setColor(new Color(90, 230, 220, 42));
+                g2.fillRect(0, 0, panelW, panelH);
+            }
+
             drawFooter(g2);
             // drawMobileControls removed
 
@@ -1457,6 +1547,22 @@ public class SimpleRunnerGame extends JFrame {
                 g2.fillRect(panelW - 100, timerY + 6, (int)((doubleScoreTimer/10.0) * 70), 8);
                 g2.setColor(Color.WHITE);
                 g2.drawRect(panelW - 100, timerY + 6, 70, 8);
+                timerY += 30;
+            }
+            if (jetpackTimer > 0.0) {
+                if (jetpackImage != null) g2.drawImage(jetpackImage, panelW - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(120, 200, 255));
+                g2.fillRect(panelW - 100, timerY + 6, (int)((jetpackTimer/7.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
+                timerY += 30;
+            }
+            if (slowMoTimer > 0.0) {
+                if (slowMoImage != null) g2.drawImage(slowMoImage, panelW - 130, timerY, 20, 20, null);
+                g2.setColor(new Color(90, 230, 220));
+                g2.fillRect(panelW - 100, timerY + 6, (int)((slowMoTimer/6.0) * 70), 8);
+                g2.setColor(Color.WHITE);
+                g2.drawRect(panelW - 100, timerY + 6, 70, 8);
             }
         }
 
@@ -1504,7 +1610,9 @@ public class SimpleRunnerGame extends JFrame {
             
             double targetX = laneCenterX[player.getLane()] - (PLAYER_WIDTH / 2.0);
             boolean sliding = player.isSliding();
-            if (!player.isOnGround()) {
+            if (player.isFlying()) {
+                imgToDraw = playerJumpImage; // tucked pose reads well while hovering
+            } else if (!player.isOnGround()) {
                 imgToDraw = playerJumpImage;
             } else if (sliding && playerSlideImage != null) {
                 imgToDraw = playerSlideImage;
@@ -1528,7 +1636,22 @@ public class SimpleRunnerGame extends JFrame {
                 playerG2.setColor(new Color(52, 208, 255));
                 playerG2.fillRoundRect(drawX, drawY, PLAYER_WIDTH, PLAYER_HEIGHT, 10, 10);
             }
-            
+
+            // Jetpack strapped to the player's back, with a flickering thrust flame
+            if (player.isFlying()) {
+                if (jetpackImage != null) {
+                    playerG2.drawImage(jetpackImage, drawX - 8, drawY + 12, 18, 18, null);
+                }
+                double flicker = 0.6 + 0.4 * Math.abs(Math.sin(System.nanoTime() / 6e7));
+                int flameH = (int) (16 * flicker);
+                playerG2.setColor(new Color(255, 170, 40, 210));
+                playerG2.fillOval(drawX + 6, -2, 9, flameH);
+                playerG2.fillOval(drawX + PLAYER_WIDTH - 15, -2, 9, flameH);
+                playerG2.setColor(new Color(255, 240, 160, 230));
+                playerG2.fillOval(drawX + 8, -1, 5, flameH / 2);
+                playerG2.fillOval(drawX + PLAYER_WIDTH - 13, -1, 5, flameH / 2);
+            }
+
             playerG2.dispose();
 
         }
@@ -1541,7 +1664,13 @@ public class SimpleRunnerGame extends JFrame {
                 int w = (int) obstacle.getWidth();
                 int h = (int) obstacle.getHeight();
                 
-                Image obsImg = obstacleImages[obstacle.getType()];
+                int type = obstacle.getType();
+                Image obsImg = obstacleImages[type];
+
+                if (isOncoming(type)) {
+                    drawOncomingEffects(g2, obstacle, x, y, w, h);
+                }
+
                 if (obsImg != null) {
                     // Draw centered if original width differs
                     g2.drawImage(obsImg, x, y, w, h, null);
@@ -1551,6 +1680,44 @@ public class SimpleRunnerGame extends JFrame {
                     g2.fillRoundRect(x, y, w, h, 6, 6);
                 }
             }
+        }
+
+        /**
+         * Driving animation for oncoming traffic: speed streaks trailing behind the
+         * vehicle, twin headlight cones sweeping ahead of it and a pulsing glow, so
+         * the vehicle reads as actively driving rather than sliding down the road.
+         */
+        private void drawOncomingEffects(Graphics2D g2, Obstacle o, int x, int y, int w, int h) {
+            Composite old = g2.getComposite();
+            double spin = o.getWheelSpin();
+
+            // Motion streaks behind the vehicle (it travels downward, so they trail upward)
+            g2.setColor(new Color(255, 255, 255, 60));
+            for (int i = 0; i < 3; i++) {
+                int sx = x + (int) (w * (0.22 + 0.28 * i));
+                int len = 16 + (int) (7 * Math.abs(Math.sin(spin * 14.0 + i)));
+                g2.fillRect(sx, y - len, 2, len);
+            }
+
+            // Headlight beams projected ahead (down-screen) of the vehicle
+            int beamLen = (int) (h * 0.85);
+            int lx = x + (int) (w * 0.22);
+            int rx = x + (int) (w * 0.78);
+            int by = y + h;
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.30f));
+            g2.setColor(new Color(255, 246, 190));
+            g2.fillPolygon(new int[]{lx, rx, rx + (int) (w * 0.42), lx - (int) (w * 0.42)},
+                           new int[]{by - 4, by - 4, by + beamLen, by + beamLen}, 4);
+
+            // Pulsing headlamps
+            double pulse = 0.72 + 0.28 * Math.abs(Math.sin(spin * 9.0));
+            g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) pulse));
+            g2.setColor(new Color(255, 252, 214));
+            int r = Math.max(4, (int) (w * 0.17));
+            g2.fillOval(lx - r / 2, by - r / 2 - 2, r, r);
+            g2.fillOval(rx - r / 2, by - r / 2 - 2, r, r);
+
+            g2.setComposite(old);
         }
 
         private void drawCoins(Graphics2D g2) {
@@ -1588,6 +1755,8 @@ public class SimpleRunnerGame extends JFrame {
                 case MAGNET: return magnetImage;
                 case BOOST: return boostImage;
                 case DOUBLE_SCORE: return doubleScoreImage;
+                case JETPACK: return jetpackImage;
+                case SLOW_MO: return slowMoImage;
                 default: return null;
             }
         }
@@ -1616,7 +1785,7 @@ public class SimpleRunnerGame extends JFrame {
         private void drawFooter(Graphics2D g2) {
             g2.setColor(new Color(255, 255, 255, 60));
             g2.setFont(new Font("SansSerif", Font.PLAIN, 11));
-            g2.drawString("A/D: lanes  |  Space: jump  |  S: slide  |  P: pause", 46, panelH - 16);
+            g2.drawString("A/D: lanes | Space: jump | S: slide | P: pause | M: mute", 40, panelH - 16);
         }
 
         private void drawMobileControls(Graphics2D g2) {
@@ -1810,12 +1979,23 @@ public class SimpleRunnerGame extends JFrame {
             private double velocityY = 0.0;
             private boolean onGround = true;
             private double slideTimer = 0.0;
+            private boolean flying = false;
 
             /** Duck under high obstacles; ignored while airborne. */
             void slide() {
-                if (onGround) {
+                if (onGround && !flying) {
                     slideTimer = SLIDE_DURATION;
                 }
+            }
+
+            /** Jetpack hover: lifts the player above the road while active. */
+            void setFlying(boolean flying) {
+                this.flying = flying;
+                if (flying) slideTimer = 0.0;
+            }
+
+            boolean isFlying() {
+                return flying;
             }
 
             boolean isSliding() {
@@ -1854,6 +2034,15 @@ public class SimpleRunnerGame extends JFrame {
                     x = targetXPos;
                 }
 
+                if (flying) {
+                    // Jetpack: ease up to a fixed hover height and stay there
+                    double hoverY = GROUND_Y - JETPACK_HOVER_HEIGHT;
+                    y += (hoverY - y) * Math.min(1.0, 6.0 * deltaTime);
+                    velocityY = 0.0;
+                    onGround = false;
+                    return;
+                }
+
                 // Vertical jump physics and gravity
                 if (!onGround) {
                     velocityY += GRAVITY * deltaTime;
@@ -1874,6 +2063,7 @@ public class SimpleRunnerGame extends JFrame {
                 velocityY = 0.0;
                 onGround = true;
                 slideTimer = 0.0;
+                flying = false;
             }
 
             void setX(double x) { this.x = x; }
@@ -1932,6 +2122,7 @@ public class SimpleRunnerGame extends JFrame {
             private final int type;
             private boolean hit = false;
             private boolean passed = false;
+            private double wheelSpin = 0.0;
 
             Obstacle(double startX, double startY, int lane, double w, double h, int type) {
                 this.x = startX;
@@ -1945,8 +2136,15 @@ public class SimpleRunnerGame extends JFrame {
             int getType() { return type; }
 
             void update(double deltaTime, double speed) {
-                y += speed * deltaTime;
+                // Oncoming vehicles add their own closing speed on top of the world scroll.
+                y += (speed + oncomingClosingSpeed(type)) * deltaTime;
+                if (isOncoming(type)) {
+                    wheelSpin += deltaTime;
+                }
             }
+
+            /** Drives the driving animation (wheel blur / headlight flicker). */
+            double getWheelSpin() { return wheelSpin; }
 
             boolean isOffScreen() {
                 return y > ROAD_Y + ROAD_H + 10;
@@ -2037,7 +2235,7 @@ public class SimpleRunnerGame extends JFrame {
         }
 
         private static class PowerUp {
-            enum Type { SHIELD, MAGNET, BOOST, DOUBLE_SCORE }
+            enum Type { SHIELD, MAGNET, BOOST, DOUBLE_SCORE, JETPACK, SLOW_MO }
             private final double x;
             private double y;
             private final int lane;

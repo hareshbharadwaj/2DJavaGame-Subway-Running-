@@ -141,5 +141,30 @@ def main():
     save(cover(home, 420, 760).convert("RGBA"), "ui/home_bg.png")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and not os.environ.get("PASS2"):
     main()
+
+
+def process_traffic_and_abilities():
+    """Second asset pass: oncoming traffic, a longer truck and two ability icons."""
+    # --- longer truck: an articulated lorry, far taller than the existing truck ---
+    save(fit(trim(to_rgba(os.path.join(RAW, "truck_long.png"))), width=140),
+         "obstacles/truck_long.png")
+
+    # --- oncoming traffic (art already faces down-screen, toward the player) ---
+    save(fit(trim(to_rgba(os.path.join(RAW, "bike.png"))), width=86),
+         "obstacles/bike_oncoming.png")
+    save(fit(trim(to_rgba(os.path.join(RAW, "auto.png"))), width=112),
+         "obstacles/auto_oncoming.png")
+    save(fit(trim(to_rgba(os.path.join(RAW, "car_oncoming.png"))), width=150, height=240),
+         "obstacles/car_oncoming.png")
+
+    # --- ability icons, matched to the existing 80x80 power-up set ---
+    save(fit(trim(to_rgba(os.path.join(RAW, "jetpack.png"))), width=80, height=80),
+         "ui/jetpack.png")
+    save(fit(trim(to_rgba(os.path.join(RAW, "slowmo.png"))), width=80, height=80),
+         "ui/slowmo.png")
+
+
+if os.environ.get("PASS2"):
+    process_traffic_and_abilities()
