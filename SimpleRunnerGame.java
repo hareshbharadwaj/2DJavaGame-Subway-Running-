@@ -19,33 +19,24 @@ public class SimpleRunnerGame extends JFrame {
     public static JPanel mainPanel = new JPanel(cardLayout);
     public static GamePanel gamePanel;
     public static HomePanel homePanel;
-    public static LeaderboardPanel leaderboardPanel;
-    public static String currentUsername = SessionManager.loadSession();
-
-    public static void saveUsername(String name) {
-        currentUsername = name;
-        SessionManager.saveSession(name);
-    }
-
-    public static LoginPanel loginPanel;
+    public static StatsPanel statsPanel;
 
     public SimpleRunnerGame() {
         super("JavaDash");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
-        
-        DbManager.initializeTables();
-        
+
+        // Progress is kept in a local save file - no database, no login.
+        LocalStore.load();
+
         gamePanel = new GamePanel();
         homePanel = new HomePanel();
-        leaderboardPanel = new LeaderboardPanel();
-        loginPanel = new LoginPanel();
-        
-        mainPanel.add(loginPanel, "LOGIN");
+        statsPanel = new StatsPanel();
+
         mainPanel.add(homePanel, "HOME");
         mainPanel.add(gamePanel, "GAME");
-        mainPanel.add(leaderboardPanel, "LEADERBOARD");
-        
+        mainPanel.add(statsPanel, "STATS");
+
         setContentPane(mainPanel);
         pack();
         setLocationRelativeTo(null);
@@ -53,7 +44,7 @@ public class SimpleRunnerGame extends JFrame {
 
     public static void showScreen(String name) {
         if (name.equals("HOME")) homePanel.refresh();
-        if (name.equals("LEADERBOARD")) leaderboardPanel.refresh();
+        if (name.equals("STATS")) statsPanel.refresh();
         if (name.equals("GAME")) {
             gamePanel.resetGame();
             gamePanel.requestFocusInWindow();
@@ -65,110 +56,8 @@ public class SimpleRunnerGame extends JFrame {
         SwingUtilities.invokeLater(() -> {
             SimpleRunnerGame game = new SimpleRunnerGame();
             game.setVisible(true);
-            if (currentUsername == null || currentUsername.isEmpty()) {
-                showScreen("LOGIN");
-            } else {
-                showScreen("HOME");
-            }
+            showScreen("HOME");   // straight into the menu: no sign-in step
         });
-    }
-
-    private static class LoginPanel extends JPanel {
-        private JTextField nameField;
-        private JPasswordField passField;
-        private JLabel msgLabel;
-
-        public LoginPanel() {
-            setPreferredSize(new Dimension(420, 760));
-            setBackground(new Color(12, 18, 30));
-            setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-
-            add(Box.createVerticalStrut(150));
-
-            JLabel title = new JLabel("JavaDash Login");
-            title.setFont(new Font("SansSerif", Font.BOLD, 40));
-            title.setForeground(new Color(52, 208, 255));
-            title.setAlignmentX(Component.CENTER_ALIGNMENT);
-            add(title);
-
-            add(Box.createVerticalStrut(50));
-
-            JLabel userLbl = new JLabel("Username:");
-            userLbl.setForeground(Color.WHITE);
-            userLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
-            add(userLbl);
-
-            nameField = new JTextField(15);
-            nameField.setMaximumSize(new Dimension(200, 30));
-            nameField.setHorizontalAlignment(JTextField.CENTER);
-            add(nameField);
-
-            add(Box.createVerticalStrut(20));
-
-            JLabel passLbl = new JLabel("Password:");
-            passLbl.setForeground(Color.WHITE);
-            passLbl.setAlignmentX(Component.CENTER_ALIGNMENT);
-            add(passLbl);
-
-            passField = new JPasswordField(15);
-            passField.setMaximumSize(new Dimension(200, 30));
-            passField.setHorizontalAlignment(JTextField.CENTER);
-            add(passField);
-
-            add(Box.createVerticalStrut(10));
-
-            msgLabel = new JLabel(" ");
-            msgLabel.setForeground(new Color(255, 100, 100));
-            msgLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-            add(msgLabel);
-
-            add(Box.createVerticalStrut(20));
-
-            JPanel btnPanel = new JPanel();
-            btnPanel.setOpaque(false);
-            btnPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 20, 0));
-
-            JButton loginBtn = new JButton("LOGIN");
-            loginBtn.addActionListener(e -> attemptLogin());
-
-            JButton createBtn = new JButton("CREATE");
-            createBtn.addActionListener(e -> attemptCreate());
-
-            btnPanel.add(loginBtn);
-            btnPanel.add(createBtn);
-            btnPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
-            add(btnPanel);
-        }
-
-        private void attemptLogin() {
-            String u = nameField.getText().trim();
-            String p = new String(passField.getPassword()).trim();
-            if (u.isEmpty() || p.isEmpty()) {
-                msgLabel.setText("Please enter username and password.");
-                return;
-            }
-            if (DbManager.authenticatePlayer(u, p)) {
-                saveUsername(u);
-                showScreen("HOME");
-            } else {
-                msgLabel.setText("Invalid username or password.");
-            }
-        }
-
-        private void attemptCreate() {
-            String u = nameField.getText().trim();
-            String p = new String(passField.getPassword()).trim();
-            if (u.isEmpty() || p.isEmpty()) {
-                msgLabel.setText("Please enter username and password.");
-                return;
-            }
-            if (DbManager.registerPlayer(u, p)) {
-                saveUsername(u);
-                showScreen("HOME");
-            } else {
-                msgLabel.setText("Username already exists or DB offline.");
-            }
-        }
     }
 
     private static class HomePanel extends JPanel {
@@ -231,21 +120,24 @@ public class SimpleRunnerGame extends JFrame {
             startBtn.addActionListener(e -> showScreen("GAME"));
             add(startBtn);
 
-            JButton lbBtn = new JButton("Rankings");
-            lbBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
-            lbBtn.setBounds(310, 700, 100, 40);
-            lbBtn.addActionListener(e -> showScreen("LEADERBOARD"));
-            add(lbBtn);
+            JButton statsBtn = new JButton("My Stats");
+            statsBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+            statsBtn.setBounds(310, 700, 100, 40);
+            statsBtn.addActionListener(e -> showScreen("STATS"));
+            add(statsBtn);
 
-            JButton switchBtn = new JButton("Logout");
-            switchBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
-            switchBtn.setBounds(10, 700, 100, 40);
-            switchBtn.addActionListener(e -> {
-                SessionManager.clearSession();
-                currentUsername = null;
-                showScreen("LOGIN");
+            JButton nameBtn = new JButton("Name");
+            nameBtn.setFont(new Font("SansSerif", Font.BOLD, 14));
+            nameBtn.setBounds(10, 700, 100, 40);
+            nameBtn.addActionListener(e -> {
+                SoundManager.play("click");
+                String n = JOptionPane.showInputDialog(this, "Your name:", LocalStore.getPlayerName());
+                if (n != null && !n.trim().isEmpty()) {
+                    LocalStore.setPlayerName(n);
+                    refresh();
+                }
             });
-            add(switchBtn);
+            add(nameBtn);
 
             // Slow, continuous turntable rotation so the static menu feels alive.
             spinTimer = new Timer(1000 / 30, e -> {
@@ -333,74 +225,100 @@ public class SimpleRunnerGame extends JFrame {
         }
 
         public void refresh() {
-            boolean dbUp = DbManager.test();
-            if (dbUp && currentUsername != null) {
-                PlayerInfo p = DbManager.getPlayer(currentUsername);
-                if (p != null) {
-                    scoreLabel.setText("Best Score: " + p.getBestScore());
-                    coinsLabel.setText("Coins: " + p.getBestCoins());
-                    gamesLabel.setText("Games: " + p.getGamesPlayed());
-                    titleLabel.setText("Hi, " + currentUsername + "!");
-                }
-            } else {
-                scoreLabel.setText("Best Score: N/A");
-                coinsLabel.setText("Coins: N/A");
-                gamesLabel.setText("Offline");
-                titleLabel.setText("Hi, " + currentUsername + "!");
-            }
+            scoreLabel.setText("Best: " + LocalStore.getHighScore());
+            coinsLabel.setText("Coins: " + LocalStore.getTotalCoins());
+            gamesLabel.setText("Games: " + LocalStore.getGamesPlayed());
+            titleLabel.setText("Hi, " + LocalStore.getPlayerName() + "!");
         }
     }
 
-    private static class LeaderboardPanel extends JPanel {
-        private JTable table;
-        private String[] cols = {"Rank", "Player", "Best Score", "Coins", "Games"};
-        private String[][] data = new String[0][5];
-        
-        public LeaderboardPanel() {
+    /**
+     * Personal stats read from the local save file. Replaces the old online
+     * leaderboard: this is a single-player game, so the only records that
+     * matter are the player's own.
+     */
+    private static class StatsPanel extends JPanel {
+        private final JTable table;
+        private final String[] cols = {"#", "Score", "Coins", "Distance", "Time"};
+        private final JLabel bestLabel;
+        private final JLabel totalsLabel;
+
+        public StatsPanel() {
             setPreferredSize(new Dimension(420, 760));
             setBackground(new Color(12, 18, 30));
             setLayout(new BorderLayout());
-            
-            JLabel title = new JLabel("LEADERBOARD", SwingConstants.CENTER);
+
+            JPanel header = new JPanel();
+            header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+            header.setBackground(new Color(12, 18, 30));
+            header.setBorder(BorderFactory.createEmptyBorder(20, 0, 12, 0));
+
+            JLabel title = new JLabel("MY STATS", SwingConstants.CENTER);
             title.setFont(new Font("SansSerif", Font.BOLD, 28));
             title.setForeground(new Color(52, 208, 255));
-            title.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
-            add(title, BorderLayout.NORTH);
-            
-            table = new JTable(data, cols);
+            title.setAlignmentX(CENTER_ALIGNMENT);
+            header.add(title);
+
+            bestLabel = new JLabel("", SwingConstants.CENTER);
+            bestLabel.setFont(new Font("SansSerif", Font.BOLD, 18));
+            bestLabel.setForeground(new Color(255, 214, 66));
+            bestLabel.setAlignmentX(CENTER_ALIGNMENT);
+            header.add(Box.createVerticalStrut(10));
+            header.add(bestLabel);
+
+            totalsLabel = new JLabel("", SwingConstants.CENTER);
+            totalsLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
+            totalsLabel.setForeground(new Color(190, 205, 225));
+            totalsLabel.setAlignmentX(CENTER_ALIGNMENT);
+            header.add(Box.createVerticalStrut(6));
+            header.add(totalsLabel);
+
+            add(header, BorderLayout.NORTH);
+
+            table = new JTable(new String[0][5], cols);
             table.setFillsViewportHeight(true);
-            JScrollPane scroll = new JScrollPane(table);
-            add(scroll, BorderLayout.CENTER);
-            
+            table.setRowHeight(24);
+            add(new JScrollPane(table), BorderLayout.CENTER);
+
             JPanel btnPanel = new JPanel();
             btnPanel.setBackground(new Color(12, 18, 30));
+
             JButton backBtn = new JButton("BACK");
             backBtn.addActionListener(e -> showScreen("HOME"));
-            JButton refreshBtn = new JButton("REFRESH");
-            refreshBtn.addActionListener(e -> refresh());
             btnPanel.add(backBtn);
-            btnPanel.add(refreshBtn);
+
+            JButton resetBtn = new JButton("RESET PROGRESS");
+            resetBtn.addActionListener(e -> {
+                int ok = JOptionPane.showConfirmDialog(this,
+                    "Erase your high score and all run history?",
+                    "Reset progress", JOptionPane.YES_NO_OPTION);
+                if (ok == JOptionPane.YES_OPTION) {
+                    LocalStore.resetAll();
+                    refresh();
+                }
+            });
+            btnPanel.add(resetBtn);
+
             add(btnPanel, BorderLayout.SOUTH);
         }
-        
+
         public void refresh() {
-            if (!DbManager.test()) return;
-            List<PlayerInfo> top = DbManager.getLeaderboard(20);
-            data = new String[top.size()][5];
-            int highlightRow = -1;
-            for (int i = 0; i < top.size(); i++) {
-                PlayerInfo p = top.get(i);
-                data[i][0] = String.valueOf(i + 1);
-                data[i][1] = p.getUsername();
-                data[i][2] = String.valueOf(p.getBestScore());
-                data[i][3] = String.valueOf(p.getBestCoins());
-                data[i][4] = String.valueOf(p.getGamesPlayed());
-                if (p.getUsername().equals(currentUsername)) highlightRow = i;
+            bestLabel.setText("Best Score: " + LocalStore.getHighScore());
+            totalsLabel.setText("Games: " + LocalStore.getGamesPlayed()
+                + "    Coins: " + LocalStore.getTotalCoins()
+                + "    Best Distance: " + LocalStore.getBestDistance() + "m");
+
+            List<LocalStore.Run> runs = LocalStore.getRecentRuns();
+            String[][] rows = new String[runs.size()][5];
+            for (int i = 0; i < runs.size(); i++) {
+                LocalStore.Run r = runs.get(i);
+                rows[i][0] = String.valueOf(i + 1);
+                rows[i][1] = String.valueOf(r.score);
+                rows[i][2] = String.valueOf(r.coins);
+                rows[i][3] = r.distance + "m";
+                rows[i][4] = r.seconds + "s";
             }
-            table.setModel(new javax.swing.table.DefaultTableModel(data, cols));
-            if (highlightRow != -1) {
-                table.setRowSelectionInterval(highlightRow, highlightRow);
-            }
+            table.setModel(new javax.swing.table.DefaultTableModel(rows, cols));
         }
     }
 
@@ -1428,43 +1346,19 @@ public class SimpleRunnerGame extends JFrame {
                             floatingTexts.add(new FloatingText(player.getX() - 4, player.getY() - 12, "CRASH!", new Color(255, 60, 60), 1.2));
                             for (int i=0; i<15; i++) particles.add(new Particle(player.getX()+20, player.getY()+20, (random.nextDouble()-0.5)*200, (random.nextDouble()-0.5)*200, new Color(255,80,80), 8, 0.6));
                             
-                            gameOverMessage = "Saving score...";
-                            final long finalScore = score;
-                            final int finalCoins = coinsCollected;
-                            final int finalDistance = distance;
-                            final int duration = (int)(System.currentTimeMillis() - runStartTime);
-                            PlayerInfo prevInfo = DbManager.getPlayer(currentUsername);
-                            final int oldBest = (prevInfo != null) ? prevInfo.getBestScore() : 0;
-                            
-                            // Celebrate immediately on a new best, without waiting for
-                            // the database round-trip (it still works fully offline).
-                            if (finalScore > oldBest && finalScore > 0) {
-                                triggerHighScoreCelebration();
-                            }
+                            // Persist the run locally. Writing a small properties
+                            // file is fast enough to do inline, so no background
+                            // worker (and no chance of a half-finished save).
+                            final int finalScore = (int) score;
+                            final int duration = (int) (System.currentTimeMillis() - runStartTime);
+                            boolean isBest = LocalStore.recordRun(finalScore, coinsCollected, distance, duration);
 
-                            new SwingWorker<Boolean, Void>() {
-                                @Override
-                                protected Boolean doInBackground() {
-                                    return DbManager.submitScore(currentUsername, (int)finalScore, finalCoins, finalDistance, duration);
-                                }
-                                @Override
-                                protected void done() {
-                                    try {
-                                        boolean success = get();
-                                        if (success) {
-                                            if (finalScore > oldBest) {
-                                                gameOverMessage = "New personal best!";
-                                            } else {
-                                                gameOverMessage = "Score saved!";
-                                            }
-                                        } else {
-                                            gameOverMessage = "Score not saved (DB offline)";
-                                        }
-                                    } catch (Exception e) {
-                                        gameOverMessage = "Score not saved (Error)";
-                                    }
-                                }
-                            }.execute();
+                            if (isBest && finalScore > 0) {
+                                gameOverMessage = "New personal best!";
+                                triggerHighScoreCelebration();
+                            } else {
+                                gameOverMessage = "Best: " + LocalStore.getHighScore();
+                            }
                         }
                         break;
                     }

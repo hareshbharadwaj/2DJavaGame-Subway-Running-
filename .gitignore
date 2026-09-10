@@ -1,3 +1,11 @@
 # Intermediate art: raw AI renders before chroma-keying and resizing.
 # Only the processed sprites under assets/ are tracked.
 raw/
+
+# Compiled classes
+*.class
+
+# Local player progress, created at runtime on each machine
+savegame.properties
+savegame.properties.bak
+savegame.properties.tmp
