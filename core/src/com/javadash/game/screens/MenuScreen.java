@@ -135,17 +135,23 @@ public class MenuScreen implements Screen {
         }
 
         // 5. Buttons
+        float btnW = 260;
+        float btnH = 50;
+        float btnX = (VIRTUAL_WIDTH - btnW) / 2f;
+        float btnPlayY = 520;
+        float btnStatsY = 590;
+
         // PLAY BUTTON
-        drawRect(game, 80, 520, 260, 50, new Color(0.18f, 0.65f, 0.35f, 1f));
+        drawRect(game, btnX, btnPlayY, btnW, btnH, new Color(0.18f, 0.65f, 0.35f, 1f));
         layout.setText(Assets.fontMedium, "PLAY GAME");
         Assets.fontMedium.setColor(Color.WHITE);
-        Assets.fontMedium.draw(game.batch, "PLAY GAME", (VIRTUAL_WIDTH - layout.width) / 2f, 552);
+        Assets.fontMedium.draw(game.batch, "PLAY GAME", (VIRTUAL_WIDTH - layout.width) / 2f, btnPlayY + (btnH - layout.height) / 2f);
 
         // STATS BUTTON
-        drawRect(game, 80, 590, 260, 50, new Color(0.2f, 0.3f, 0.45f, 1f));
+        drawRect(game, btnX, btnStatsY, btnW, btnH, new Color(0.2f, 0.3f, 0.45f, 1f));
         layout.setText(Assets.fontMedium, "MY STATS");
         Assets.fontMedium.setColor(Color.WHITE);
-        Assets.fontMedium.draw(game.batch, "MY STATS", (VIRTUAL_WIDTH - layout.width) / 2f, 622);
+        Assets.fontMedium.draw(game.batch, "MY STATS", (VIRTUAL_WIDTH - layout.width) / 2f, btnStatsY + (btnH - layout.height) / 2f);
 
         // Controls hint
         Assets.fontSmall.setColor(new Color(0.6f, 0.7f, 0.8f, 0.8f));

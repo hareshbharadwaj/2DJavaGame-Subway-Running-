@@ -143,17 +143,20 @@ public class StatsScreen implements Screen {
         }
 
         // Action Buttons
+        float btnY = 680;
+        float btnH = 48;
+
         // BACK BUTTON
-        drawRect(40, 680, 160, 48, new Color(0.2f, 0.35f, 0.55f, 1f));
+        drawRect(40, btnY, 160, btnH, new Color(0.2f, 0.35f, 0.55f, 1f));
         layout.setText(Assets.fontSmall, "BACK TO MENU");
         Assets.fontSmall.setColor(Color.WHITE);
-        Assets.fontSmall.draw(game.batch, layout, 40 + (160 - layout.width) / 2f, 710);
+        Assets.fontSmall.draw(game.batch, layout, 40 + (160 - layout.width) / 2f, btnY + (btnH - layout.height) / 2f);
 
         // RESET PROGRESS BUTTON
-        drawRect(220, 680, 160, 48, new Color(0.65f, 0.2f, 0.2f, 1f));
+        drawRect(220, btnY, 160, btnH, new Color(0.65f, 0.2f, 0.2f, 1f));
         layout.setText(Assets.fontSmall, "RESET ALL");
         Assets.fontSmall.setColor(Color.WHITE);
-        Assets.fontSmall.draw(game.batch, layout, 220 + (160 - layout.width) / 2f, 710);
+        Assets.fontSmall.draw(game.batch, layout, 220 + (160 - layout.width) / 2f, btnY + (btnH - layout.height) / 2f);
 
         game.batch.end();
     }

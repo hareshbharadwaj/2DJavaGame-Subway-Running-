@@ -221,7 +221,34 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
 
         // Road scroll & player run animation
         roadScroll += obstacleSpeed * delta;
-        runCycleTime += delta * (obstacleSpeed / 60.0);
+        runCycleTime += obstacleSpeed * delta;
+
+        // Jetpack exhaust trail
+        if (jetpackTimer > 0.0) {
+            for (int i = 0; i < 2; i++) {
+                particles.add(new Particle(
+                    player.getX() + 14 + random.nextInt(16),
+                    player.getY() + PLAYER_HEIGHT - 4,
+                    (random.nextDouble() - 0.5) * 40.0,
+                    90.0 + random.nextDouble() * 70.0,
+                    i == 0 ? new Color(1f, 190f/255f, 70f/255f, 0.85f) : new Color(1f, 110f/255f, 40f/255f, 0.8f),
+                    (float) (6.0 + random.nextDouble() * 4.0),
+                    (float) (0.35 + random.nextDouble() * 0.25)
+                ));
+            }
+        }
+        // Dust particles when grounded
+        if (player.isOnGround() && random.nextInt(100) < 30) {
+            particles.add(new Particle(
+                player.getX() + 10 + random.nextInt(24),
+                player.getY() + PLAYER_HEIGHT - 2,
+                (random.nextDouble() - 0.5) * 40.0,
+                (random.nextDouble() - 0.5) * 20.0 - 20.0,
+                new Color(200f/255f, 200f/255f, 210f/255f, 0.6f),
+                (float) (6.0 + random.nextDouble() * 4.0),
+                (float) (0.4 + random.nextDouble() * 0.3)
+            ));
+        }
 
         // Distance & score accumulators
         distanceAccumulator += obstacleSpeed * delta * 0.05;
@@ -408,18 +435,34 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         }
     }
 
+    private void drawSideStrip(TextureRegion reg, float x, float w) {
+        if (reg == null || w <= 0) return;
+        float th = Math.max(1f, reg.getRegionHeight() * (w / reg.getRegionWidth()));
+        float off = (float) (roadScroll % th);
+        if (off > 0) off -= th;
+        for (float y = off; y < VIRTUAL_HEIGHT; y += th) {
+            game.batch.draw(reg, x, y, w, th);
+        }
+    }
+
+    private void drawBarricade(TextureRegion reg, float x, float w) {
+        if (reg == null) return;
+        float bh = Math.max(1f, reg.getRegionHeight() * (w / reg.getRegionWidth()));
+        float off = (float) (roadScroll % bh);
+        if (off > 0) off -= bh;
+        for (float y = off; y < VIRTUAL_HEIGHT; y += bh) {
+            game.batch.draw(reg, x, y, w, bh);
+        }
+    }
+
     private void drawWorld() {
-        // Draw Left & Right Side Backgrounds
+        // Draw Left & Right Side Backgrounds (tiled & scrolling with road)
         TextureRegion sideL = Assets.sideLeft.get(currentEnv);
         TextureRegion sideR = Assets.sideRight.get(currentEnv);
-        if (sideL != null) game.batch.draw(sideL, 0, 0, SIDE_W, VIRTUAL_HEIGHT);
-        if (sideR != null) game.batch.draw(sideR, ROAD_RIGHT, 0, SIDE_W, VIRTUAL_HEIGHT);
+        drawSideStrip(sideL, 0, SIDE_W);
+        drawSideStrip(sideR, ROAD_RIGHT, SIDE_W);
 
         // Draw the road procedurally, exactly as the Swing original did.
-        // The road_(1).png texture is deliberately NOT used: it has its own lane
-        // markings baked in, which do not line up with the lane centres at
-        // x = 130 / 210 / 290. Drawing the dashes ourselves keeps them at
-        // x = 170 and 250, i.e. exactly on the lane boundaries.
         drawRect(ROAD_LEFT, 0, ROAD_RIGHT - ROAD_LEFT, VIRTUAL_HEIGHT, ROAD_GREY);
 
         // curbs
@@ -438,13 +481,9 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
             }
         }
 
-        // Draw Barricades
-        if (Assets.barricadeLeft != null) {
-            game.batch.draw(Assets.barricadeLeft, ROAD_LEFT - 16, 0, 16, VIRTUAL_HEIGHT);
-        }
-        if (Assets.barricadeRight != null) {
-            game.batch.draw(Assets.barricadeRight, ROAD_RIGHT, 0, 16, VIRTUAL_HEIGHT);
-        }
+        // Draw Barricades (tiled & scrolling with road)
+        drawBarricade(Assets.barricadeLeft, ROAD_LEFT - 16, 16);
+        drawBarricade(Assets.barricadeRight, ROAD_RIGHT, 16);
     }
 
     private void drawEntities() {
@@ -459,10 +498,10 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
             }
         }
 
-        // 2. Coins (8-frame spin)
-        int coinFrame = (int) ((runCycleTime * 10) % 8);
-        TextureRegion coinReg = Assets.coinRegions[coinFrame];
+        // 2. Coins (8-frame smooth spin at 100ms per frame, matching original)
         for (Coin c : coins) {
+            int coinFrame = (int) (((System.currentTimeMillis() / 100) + Math.abs(c.hashCode() % 8)) % 8);
+            TextureRegion coinReg = Assets.coinRegions[coinFrame];
             if (coinReg != null) {
                 game.batch.draw(coinReg, (float) c.getX(), (float) c.getY(), (float) c.getSize(), (float) c.getSize());
             } else {
@@ -503,14 +542,14 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         if (blinkVisible) {
             TextureRegion playerTex = Assets.playerRun1;
             if (player.isFlying()) {
-                playerTex = (Assets.jetpackImage != null) ? Assets.playerJump : Assets.playerRun1;
+                playerTex = (Assets.playerJump != null) ? Assets.playerJump : Assets.playerRun1;
             } else if (player.isJumping()) {
                 playerTex = (Assets.playerJump != null) ? Assets.playerJump : Assets.playerRun1;
             } else if (player.isSliding()) {
                 playerTex = (Assets.playerSlide != null) ? Assets.playerSlide : Assets.playerRun1;
             } else {
-                // Alternating run frames
-                boolean frame2 = ((int) (runCycleTime * 6) % 2 == 1);
+                // Natural run cadence (matches original Math.sin(runCycleTime * 0.04) > 0)
+                boolean frame2 = player.isOnGround() && (Math.sin(runCycleTime * 0.04) > 0);
                 playerTex = (frame2 && Assets.playerRun2 != null) ? Assets.playerRun2 : Assets.playerRun1;
             }
 
@@ -519,6 +558,21 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
                 float ph = PLAYER_HEIGHT;
                 if (player.isSliding()) ph *= SLIDE_HEIGHT_RATIO;
                 game.batch.draw(playerTex, (float) player.getX(), (float) player.getY(), pw, ph);
+            }
+
+            // Jetpack strapped to the player's back with dual flickering thrust flames
+            if (player.isFlying()) {
+                if (Assets.jetpackImage != null) {
+                    game.batch.draw(Assets.jetpackImage, (float) player.getX() - 8, (float) player.getY() + 12, 18, 18);
+                }
+                double flicker = 0.6 + 0.4 * Math.abs(Math.sin(System.nanoTime() / 6e7));
+                float flameH = (float) (16 * flicker);
+                // Outer flame jets (orange)
+                drawRect((float) player.getX() + 6, (float) player.getY() + PLAYER_HEIGHT - 2, 9, flameH, new Color(1f, 170f/255f, 40f/255f, 0.82f));
+                drawRect((float) player.getX() + PLAYER_WIDTH - 15, (float) player.getY() + PLAYER_HEIGHT - 2, 9, flameH, new Color(1f, 170f/255f, 40f/255f, 0.82f));
+                // Inner flame core (yellow-white)
+                drawRect((float) player.getX() + 8, (float) player.getY() + PLAYER_HEIGHT - 1, 5, flameH / 2f, new Color(1f, 240f/255f, 160f/255f, 0.9f));
+                drawRect((float) player.getX() + PLAYER_WIDTH - 13, (float) player.getY() + PLAYER_HEIGHT - 1, 5, flameH / 2f, new Color(1f, 240f/255f, 160f/255f, 0.9f));
             }
 
             // Shield bubble aura
@@ -551,26 +605,32 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         drawRect(0, 0, VIRTUAL_WIDTH, 48, new Color(0.06f, 0.09f, 0.15f, 0.85f));
 
         // Score
+        String scoreStr = String.format("%,d", score);
+        layout.setText(Assets.fontMedium, scoreStr);
         Assets.fontMedium.setColor(1f, 0.85f, 0.2f, 1f);
-        Assets.fontMedium.draw(game.batch, String.format("%,d", score), 16, 32);
+        Assets.fontMedium.draw(game.batch, scoreStr, 16, (48 - layout.height) / 2f);
 
         // Distance & Coins
+        String distStr = distance + "m";
+        layout.setText(Assets.fontSmall, distStr);
         Assets.fontSmall.setColor(0.5f, 0.8f, 1f, 1f);
-        Assets.fontSmall.draw(game.batch, distance + "m", 160, 31);
+        Assets.fontSmall.draw(game.batch, distStr, 160, (48 - layout.height) / 2f);
 
         if (Assets.coinRegions[0] != null) {
-            game.batch.draw(Assets.coinRegions[0], 235, 14, 18, 18);
+            game.batch.draw(Assets.coinRegions[0], 235, 15, 18, 18);
         }
+        String coinsStr = String.valueOf(coinsCollected);
+        layout.setText(Assets.fontSmall, coinsStr);
         Assets.fontSmall.setColor(1f, 0.9f, 0.3f, 1f);
-        Assets.fontSmall.draw(game.batch, String.valueOf(coinsCollected), 260, 31);
+        Assets.fontSmall.draw(game.batch, coinsStr, 260, (48 - layout.height) / 2f);
 
         // Hearts / Lives
         float heartX = 330;
         for (int i = 0; i < lives; i++) {
             if (Assets.heartImage != null) {
-                game.batch.draw(Assets.heartImage, heartX + i * 22, 14, 18, 18);
+                game.batch.draw(Assets.heartImage, heartX + i * 22, 15, 18, 18);
             } else {
-                drawRect(heartX + i * 22, 14, 18, 18, Color.RED);
+                drawRect(heartX + i * 22, 15, 18, 18, Color.RED);
             }
         }
 
@@ -615,40 +675,70 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
 
         layout.setText(Assets.fontLarge, "GAME OVER");
         Assets.fontLarge.setColor(1f, 0.25f, 0.25f, 1f);
-        Assets.fontLarge.draw(game.batch, "GAME OVER", (VIRTUAL_WIDTH - layout.width) / 2f, 180);
+        Assets.fontLarge.draw(game.batch, "GAME OVER", (VIRTUAL_WIDTH - layout.width) / 2f, 130);
 
         // Score Card
-        drawRect(50, 210, 320, 140, new Color(0.11f, 0.15f, 0.24f, 0.95f));
+        float cardX = 45;
+        float cardY = 175;
+        float cardW = 330;
+        float cardH = 195;
+        drawRect(cardX, cardY, cardW, cardH, new Color(0.11f, 0.15f, 0.24f, 0.95f));
 
+        float padX = 22;
+        float yRow1 = cardY + 24;
+        float yRow2 = cardY + 60;
+        float yRow3 = cardY + 96;
+        float yRow4 = cardY + 148;
+
+        // Row 1: Final Score
         Assets.fontSmall.setColor(Color.LIGHT_GRAY);
-        Assets.fontSmall.draw(game.batch, "FINAL SCORE:", 70, 245);
-        Assets.fontSmall.draw(game.batch, "COINS COLLECTED:", 70, 275);
-        Assets.fontSmall.draw(game.batch, "DISTANCE RUN:", 70, 305);
-
+        Assets.fontSmall.draw(game.batch, "FINAL SCORE:", cardX + padX, yRow1);
+        String scoreStr = String.format("%,d", score);
+        layout.setText(Assets.fontMedium, scoreStr);
+        float scoreY = yRow1 + (Assets.fontSmall.getCapHeight() - Assets.fontMedium.getCapHeight());
         Assets.fontMedium.setColor(1f, 0.85f, 0.2f, 1f);
-        Assets.fontMedium.draw(game.batch, String.format("%,d", score), 220, 247);
-        Assets.fontSmall.setColor(1f, 0.9f, 0.3f, 1f);
-        Assets.fontSmall.draw(game.batch, String.valueOf(coinsCollected), 220, 275);
-        Assets.fontSmall.setColor(0.5f, 0.8f, 1f, 1f);
-        Assets.fontSmall.draw(game.batch, distance + " m", 220, 305);
+        Assets.fontMedium.draw(game.batch, scoreStr, cardX + cardW - padX - layout.width, scoreY);
 
+        // Row 2: Coins Collected
+        Assets.fontSmall.setColor(Color.LIGHT_GRAY);
+        Assets.fontSmall.draw(game.batch, "COINS COLLECTED:", cardX + padX, yRow2);
+        String coinsCollectedStr = String.valueOf(coinsCollected);
+        layout.setText(Assets.fontSmall, coinsCollectedStr);
+        Assets.fontSmall.setColor(1f, 0.9f, 0.3f, 1f);
+        Assets.fontSmall.draw(game.batch, coinsCollectedStr, cardX + cardW - padX - layout.width, yRow2);
+
+        // Row 3: Distance Run
+        Assets.fontSmall.setColor(Color.LIGHT_GRAY);
+        Assets.fontSmall.draw(game.batch, "DISTANCE RUN:", cardX + padX, yRow3);
+        String distStr = distance + " m";
+        layout.setText(Assets.fontSmall, distStr);
+        Assets.fontSmall.setColor(0.5f, 0.8f, 1f, 1f);
+        Assets.fontSmall.draw(game.batch, distStr, cardX + cardW - padX - layout.width, yRow3);
+
+        // Row 4: Game Over Message (New best!)
         if (!gameOverMessage.isEmpty()) {
             layout.setText(Assets.fontSmall, gameOverMessage);
             Assets.fontSmall.setColor(newHighScore ? new Color(1f, 0.85f, 0.2f, 1f) : Color.WHITE);
-            Assets.fontSmall.draw(game.batch, layout, (VIRTUAL_WIDTH - layout.width) / 2f, 335);
+            Assets.fontSmall.draw(game.batch, layout, (VIRTUAL_WIDTH - layout.width) / 2f, yRow4);
         }
 
-        // PLAY AGAIN Button (x: 80 to 340, y: 440 to 490)
-        drawRect(80, 440, 260, 50, new Color(0.18f, 0.65f, 0.35f, 1f));
+        // PLAY AGAIN Button (x: 70 to 350, y: 410 to 462)
+        float btnW = 280;
+        float btnH = 52;
+        float btnX = (VIRTUAL_WIDTH - btnW) / 2f;
+        float btn1Y = 410;
+
+        drawRect(btnX, btn1Y, btnW, btnH, new Color(0.18f, 0.65f, 0.35f, 1f));
         layout.setText(Assets.fontMedium, "PLAY AGAIN");
         Assets.fontMedium.setColor(Color.WHITE);
-        Assets.fontMedium.draw(game.batch, "PLAY AGAIN", (VIRTUAL_WIDTH - layout.width) / 2f, 472);
+        Assets.fontMedium.draw(game.batch, "PLAY AGAIN", (VIRTUAL_WIDTH - layout.width) / 2f, btn1Y + (btnH - layout.height) / 2f);
 
-        // MAIN MENU Button (x: 80 to 340, y: 510 to 560)
-        drawRect(80, 510, 260, 50, new Color(0.25f, 0.35f, 0.5f, 1f));
+        // MAIN MENU Button (x: 70 to 350, y: 485 to 537)
+        float btn2Y = 485;
+        drawRect(btnX, btn2Y, btnW, btnH, new Color(0.25f, 0.35f, 0.5f, 1f));
         layout.setText(Assets.fontMedium, "MAIN MENU");
         Assets.fontMedium.setColor(Color.WHITE);
-        Assets.fontMedium.draw(game.batch, "MAIN MENU", (VIRTUAL_WIDTH - layout.width) / 2f, 542);
+        Assets.fontMedium.draw(game.batch, "MAIN MENU", (VIRTUAL_WIDTH - layout.width) / 2f, btn2Y + (btnH - layout.height) / 2f);
     }
 
     private void drawRect(float x, float y, float w, float h, Color c) {
@@ -711,14 +801,20 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         }
 
         if (state == GameState.GAME_OVER) {
-            // PLAY AGAIN (x: 80 to 340, y: 440 to 490)
-            if (worldX >= 80 && worldX <= 340 && worldY >= 440 && worldY <= 490) {
+            float btnW = 280;
+            float btnH = 52;
+            float btnX = (VIRTUAL_WIDTH - btnW) / 2f;
+            float btn1Y = 410;
+            float btn2Y = 485;
+
+            // PLAY AGAIN (x: 70 to 350, y: 410 to 462)
+            if (worldX >= btnX && worldX <= btnX + btnW && worldY >= btn1Y && worldY <= btn1Y + btnH) {
                 AudioManager.play("click");
                 resetGame();
                 return;
             }
-            // MAIN MENU (x: 80 to 340, y: 510 to 560)
-            if (worldX >= 80 && worldX <= 340 && worldY >= 510 && worldY <= 560) {
+            // MAIN MENU (x: 70 to 350, y: 485 to 537)
+            if (worldX >= btnX && worldX <= btnX + btnW && worldY >= btn2Y && worldY <= btn2Y + btnH) {
                 AudioManager.play("click");
                 game.showMenu();
                 return;
