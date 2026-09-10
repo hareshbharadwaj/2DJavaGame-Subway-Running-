@@ -28,7 +28,14 @@ public class JavaDashGame extends Game {
         batch = new SpriteBatch();
 
         camera = new OrthographicCamera();
-        // IMPORTANT: setToOrtho(true) sets Y-down convention, matching Swing!
+        // Y-down convention, matching the Swing original. This is what lets every
+        // physics constant and every "y += speed * delta" port across unchanged:
+        // gravity pulls toward GROUND_Y = 644 and obstacles scroll down-screen.
+        //
+        // The trade-off is that libGDX stores textures bottom-up, so drawing a raw
+        // Texture under this camera renders it upside down. That is handled once,
+        // at load time: Assets exposes pre-flipped TextureRegions and flipped
+        // BitmapFonts, so no draw call has to compensate.
         camera.setToOrtho(true, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         viewport = new FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, camera);
         viewport.apply();

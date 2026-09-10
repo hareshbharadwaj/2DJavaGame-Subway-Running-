@@ -59,11 +59,16 @@ public final class GameConstants {
         return type >= OBS_BIKE_ONCOMING && type <= OBS_CAR_ONCOMING;
     }
 
+    /**
+     * Extra closing speed for oncoming traffic, on top of the world scroll.
+     * These values are tuned for reaction fairness: even the quickest bike at
+     * top game speed still leaves roughly a second to change lane.
+     */
     public static double oncomingClosingSpeed(int type) {
         switch (type) {
-            case OBS_BIKE_ONCOMING: return 220.0;
-            case OBS_AUTO_ONCOMING: return 160.0;
-            case OBS_CAR_ONCOMING:  return 120.0;
+            case OBS_BIKE_ONCOMING: return 200.0; // bikes weave in fastest
+            case OBS_AUTO_ONCOMING: return 130.0; // autos putter along
+            case OBS_CAR_ONCOMING:  return 170.0;
             default: return 0.0;
         }
     }

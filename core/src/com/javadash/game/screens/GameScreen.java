@@ -31,6 +31,11 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         PLAYING, PAUSED, GAME_OVER
     }
 
+    // Road colours, matching the Swing original's drawRoad()
+    private static final Color ROAD_GREY  = new Color(100 / 255f, 100 / 255f, 100 / 255f, 1f);
+    private static final Color CURB_LIGHT = new Color(211 / 255f, 211 / 255f, 211 / 255f, 1f); // Color.LIGHT_GRAY
+    private static final Color CURB_DARK  = new Color(64 / 255f, 64 / 255f, 64 / 255f, 1f);    // Color.DARK_GRAY
+
     private final JavaDashGame game;
     private final GlyphLayout layout = new GlyphLayout();
     private final Random random = new Random();
@@ -405,16 +410,32 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
 
     private void drawWorld() {
         // Draw Left & Right Side Backgrounds
-        Texture sideL = Assets.sideLeft.get(currentEnv);
-        Texture sideR = Assets.sideRight.get(currentEnv);
+        TextureRegion sideL = Assets.sideLeft.get(currentEnv);
+        TextureRegion sideR = Assets.sideRight.get(currentEnv);
         if (sideL != null) game.batch.draw(sideL, 0, 0, SIDE_W, VIRTUAL_HEIGHT);
         if (sideR != null) game.batch.draw(sideR, ROAD_RIGHT, 0, SIDE_W, VIRTUAL_HEIGHT);
 
-        // Draw Scrolling Road
-        if (Assets.roadImage != null) {
-            float roadOffset = (float) (roadScroll % VIRTUAL_HEIGHT);
-            game.batch.draw(Assets.roadImage, ROAD_LEFT, roadOffset - VIRTUAL_HEIGHT, ROAD_RIGHT - ROAD_LEFT, VIRTUAL_HEIGHT);
-            game.batch.draw(Assets.roadImage, ROAD_LEFT, roadOffset, ROAD_RIGHT - ROAD_LEFT, VIRTUAL_HEIGHT);
+        // Draw the road procedurally, exactly as the Swing original did.
+        // The road_(1).png texture is deliberately NOT used: it has its own lane
+        // markings baked in, which do not line up with the lane centres at
+        // x = 130 / 210 / 290. Drawing the dashes ourselves keeps them at
+        // x = 170 and 250, i.e. exactly on the lane boundaries.
+        drawRect(ROAD_LEFT, 0, ROAD_RIGHT - ROAD_LEFT, VIRTUAL_HEIGHT, ROAD_GREY);
+
+        // curbs
+        drawRect(ROAD_LEFT - 4, 0, 4, VIRTUAL_HEIGHT, CURB_LIGHT);
+        drawRect(ROAD_RIGHT, 0, 4, VIRTUAL_HEIGHT, CURB_LIGHT);
+        drawRect(ROAD_LEFT, 0, 3, VIRTUAL_HEIGHT, CURB_DARK);
+        drawRect(ROAD_RIGHT - 3, 0, 3, VIRTUAL_HEIGHT, CURB_DARK);
+
+        // lane dashes: 6x30 every 55px, scrolling with the road
+        int off = (int) (roadScroll % 55);
+        if (off > 0) off -= 55;
+        for (int i = 1; i <= 2; i++) {
+            float dashX = ROAD_LEFT + LANE_W * i - 3;
+            for (int y = off; y < VIRTUAL_HEIGHT; y += 55) {
+                drawRect(dashX, y, 6, 30, Color.WHITE);
+            }
         }
 
         // Draw Barricades
@@ -460,7 +481,7 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
 
         // 4. Power-ups
         for (PowerUp pu : powerUps) {
-            Texture icon = null;
+            TextureRegion icon = null;
             switch (pu.getType()) {
                 case SHIELD: icon = Assets.shieldImage; break;
                 case MAGNET: icon = Assets.magnetImage; break;
@@ -480,7 +501,7 @@ public class GameScreen implements Screen, GameInputHandler.GameActionListener {
         // Invulnerability blinking
         boolean blinkVisible = (invincibilityTimer <= 0) || (((int) (invincibilityTimer * 12)) % 2 == 0);
         if (blinkVisible) {
-            Texture playerTex = Assets.playerRun1;
+            TextureRegion playerTex = Assets.playerRun1;
             if (player.isFlying()) {
                 playerTex = (Assets.jetpackImage != null) ? Assets.playerJump : Assets.playerRun1;
             } else if (player.isJumping()) {

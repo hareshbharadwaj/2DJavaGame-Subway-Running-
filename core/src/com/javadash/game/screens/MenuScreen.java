@@ -17,6 +17,11 @@ import static com.javadash.game.GameConstants.VIRTUAL_WIDTH;
 
 public class MenuScreen implements Screen {
 
+    // Menu road colours (kept in step with GameScreen's procedural road)
+    private static final Color MENU_ROAD_GREY = new Color(76 / 255f, 76 / 255f, 76 / 255f, 1f);
+    private static final Color MENU_DASH = new Color(1f, 1f, 1f, 0.85f);
+
+
     private final JavaDashGame game;
     private final GlyphLayout layout = new GlyphLayout();
     private final Vector3 touchPoint = new Vector3();
@@ -80,11 +85,15 @@ public class MenuScreen implements Screen {
         game.batch.setProjectionMatrix(game.camera.combined);
         game.batch.begin();
 
-        // 1. Background / Road preview
-        if (Assets.roadImage != null) {
-            game.batch.setColor(0.35f, 0.35f, 0.35f, 1f);
-            game.batch.draw(Assets.roadImage, 90, 0, 240, VIRTUAL_HEIGHT);
-            game.batch.setColor(Color.WHITE);
+        // 1. Background / Road preview.
+        // Drawn procedurally, matching the gameplay screen: the road texture's
+        // baked-in markings do not line up with the lane centres (130/210/290).
+        drawRect(game, 90, 0, 240, VIRTUAL_HEIGHT, MENU_ROAD_GREY);
+        for (int i = 1; i <= 2; i++) {
+            float dashX = 90 + 80 * i - 3;
+            for (int y = 0; y < VIRTUAL_HEIGHT; y += 55) {
+                drawRect(game, dashX, y, 6, 30, MENU_DASH);
+            }
         }
 
         // 2. Logo / Title

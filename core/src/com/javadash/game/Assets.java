@@ -15,34 +15,37 @@ import static com.javadash.game.GameConstants.*;
 
 public final class Assets {
 
-    public static Texture playerRun1;
-    public static Texture playerRun2;
-    public static Texture playerLeft;
-    public static Texture playerRight;
-    public static Texture playerJump;
-    public static Texture playerSlide;
+    // Every drawable is exposed as a TextureRegion that has already been flipped
+    // for the Y-down camera (see safeLoadRegion). The raw Texture handles are kept
+    // only so they can be disposed.
+    public static TextureRegion playerRun1;
+    public static TextureRegion playerRun2;
+    public static TextureRegion playerLeft;
+    public static TextureRegion playerRight;
+    public static TextureRegion playerJump;
+    public static TextureRegion playerSlide;
 
-    public static Texture roadImage;
-    public static Texture barricadeLeft;
-    public static Texture barricadeRight;
+    public static TextureRegion roadImage;
+    public static TextureRegion barricadeLeft;
+    public static TextureRegion barricadeRight;
 
-    public static final Map<String, Texture> sideLeft = new HashMap<>();
-    public static final Map<String, Texture> sideRight = new HashMap<>();
+    public static final Map<String, TextureRegion> sideLeft = new HashMap<>();
+    public static final Map<String, TextureRegion> sideRight = new HashMap<>();
 
-    public static Texture[] obstacleTextures = new Texture[OBSTACLE_TYPE_COUNT];
     public static TextureRegion[] obstacleRegions = new TextureRegion[OBSTACLE_TYPE_COUNT];
-
-    public static Texture[] coinTextures = new Texture[8];
     public static TextureRegion[] coinRegions = new TextureRegion[8];
 
-    public static Texture heartImage;
-    public static Texture shieldImage;
-    public static Texture magnetImage;
-    public static Texture boostImage;
-    public static Texture doubleScoreImage;
-    public static Texture jetpackImage;
-    public static Texture slowMoImage;
-    public static Texture logoImage;
+    public static TextureRegion heartImage;
+    public static TextureRegion shieldImage;
+    public static TextureRegion magnetImage;
+    public static TextureRegion boostImage;
+    public static TextureRegion doubleScoreImage;
+    public static TextureRegion jetpackImage;
+    public static TextureRegion slowMoImage;
+    public static TextureRegion logoImage;
+
+    /** Everything loaded, tracked purely so dispose() can release it. */
+    private static final java.util.List<Texture> owned = new java.util.ArrayList<>();
 
     // Solid 1x1 white texture for drawing colored boxes, progress bars, and overlays
     public static Texture pixel;
@@ -68,12 +71,39 @@ public final class Assets {
             if (fh.exists()) {
                 Texture t = new Texture(fh);
                 t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                owned.add(t);
                 return t;
             }
         } catch (Exception e) {
             Gdx.app.error("Assets", "Failed loading " + path, e);
         }
         return null;
+    }
+
+    /**
+     * Load a texture as a region that is already flipped for the Y-down camera.
+     *
+     * The camera uses {@code setToOrtho(true, ...)} so that all the physics and
+     * layout constants carried over from the Swing version keep working (y grows
+     * downward, gravity pulls toward GROUND_Y). The side effect is that raw
+     * textures, which libGDX stores bottom-up, come out upside down. Flipping the
+     * region once here fixes every sprite at the point of loading, instead of
+     * making each of the ~35 draw calls compensate for it.
+     */
+    public static TextureRegion safeLoadRegion(String path) {
+        Texture t = safeLoad(path);
+        if (t == null) return null;
+        TextureRegion r = new TextureRegion(t);
+        r.flip(false, true);
+        return r;
+    }
+
+    /** Flip an already-loaded texture into a Y-down-correct region. */
+    public static TextureRegion flipped(Texture t) {
+        if (t == null) return null;
+        TextureRegion r = new TextureRegion(t);
+        r.flip(false, true);
+        return r;
     }
 
     public static void loadAll() {
@@ -85,30 +115,31 @@ public final class Assets {
         px.dispose();
 
         // BitmapFonts
-        fontSmall = new BitmapFont();
+        // "true" builds the font flipped, which is what a Y-down camera needs.
+        fontSmall = new BitmapFont(true);
         fontSmall.getData().setScale(0.85f);
-        fontMedium = new BitmapFont();
+        fontMedium = new BitmapFont(true);
         fontMedium.getData().setScale(1.15f);
-        fontLarge = new BitmapFont();
+        fontLarge = new BitmapFont(true);
         fontLarge.getData().setScale(1.6f);
 
         // Player sprites
-        playerRun1 = safeLoad("player/player_run (2).png");
-        playerRun2 = safeLoad("player/player_run (1)_processed.png");
-        playerLeft = safeLoad("player/player_left (1).png");
-        playerRight = safeLoad("player/player_right (1).png");
-        playerJump = safeLoad("player/player_jump (1).png");
-        playerSlide = safeLoad("player/player_slide.png");
+        playerRun1 = safeLoadRegion("player/player_run (2).png");
+        playerRun2 = safeLoadRegion("player/player_run (1)_processed.png");
+        playerLeft = safeLoadRegion("player/player_left (1).png");
+        playerRight = safeLoadRegion("player/player_right (1).png");
+        playerJump = safeLoadRegion("player/player_jump (1).png");
+        playerSlide = safeLoadRegion("player/player_slide.png");
 
         // Environment
-        roadImage = safeLoad("environment/road (1).png");
-        barricadeLeft = safeLoad("environment/barricade_raw left.png");
-        barricadeRight = safeLoad("environment/barricade_raw right.png");
+        roadImage = safeLoadRegion("environment/road (1).png");
+        barricadeLeft = safeLoadRegion("environment/barricade_raw left.png");
+        barricadeRight = safeLoadRegion("environment/barricade_raw right.png");
 
         String[] envNames = {"city", "forest", "desert", "night"};
         for (String env : envNames) {
-            Texture l = safeLoad("environment/" + env + "_side_raw left.png");
-            Texture r = safeLoad("environment/" + env + "_side_raw right.png");
+            TextureRegion l = safeLoadRegion("environment/" + env + "_side_raw left.png");
+            TextureRegion r = safeLoadRegion("environment/" + env + "_side_raw right.png");
             if (l != null) sideLeft.put(env, l);
             if (r != null) sideRight.put(env, r);
         }
@@ -118,32 +149,26 @@ public final class Assets {
                              "car_taxi (1)", "cone (1)", "pothole", "truck_long",
                              "bike_oncoming", "auto_oncoming", "car_oncoming"};
         for (int i = 0; i < obsNames.length; i++) {
-            obstacleTextures[i] = safeLoad("obstacles/" + obsNames[i] + ".png");
-            if (obstacleTextures[i] == null) {
-                obstacleTextures[i] = safeLoad("obstacles/barrier (1).png");
-            }
-            if (obstacleTextures[i] != null) {
-                obstacleRegions[i] = new TextureRegion(obstacleTextures[i]);
+            obstacleRegions[i] = safeLoadRegion("obstacles/" + obsNames[i] + ".png");
+            if (obstacleRegions[i] == null) {
+                obstacleRegions[i] = safeLoadRegion("obstacles/barrier (1).png");
             }
         }
 
         // Coins (8 animation frames)
         for (int i = 0; i < 8; i++) {
-            coinTextures[i] = safeLoad("collectibles/coin" + (i + 1) + ".png");
-            if (coinTextures[i] != null) {
-                coinRegions[i] = new TextureRegion(coinTextures[i]);
-            }
+            coinRegions[i] = safeLoadRegion("collectibles/coin" + (i + 1) + ".png");
         }
 
         // UI
-        heartImage = safeLoad("ui/heart (1).png");
-        shieldImage = safeLoad("ui/shield (1).png");
-        magnetImage = safeLoad("ui/magnet (1).png");
-        boostImage = safeLoad("ui/boost.png");
-        doubleScoreImage = safeLoad("ui/x2.png");
-        jetpackImage = safeLoad("ui/jetpack.png");
-        slowMoImage = safeLoad("ui/slowmo.png");
-        logoImage = safeLoad("ui/logo.png");
+        heartImage = safeLoadRegion("ui/heart (1).png");
+        shieldImage = safeLoadRegion("ui/shield (1).png");
+        magnetImage = safeLoadRegion("ui/magnet (1).png");
+        boostImage = safeLoadRegion("ui/boost.png");
+        doubleScoreImage = safeLoadRegion("ui/x2.png");
+        jetpackImage = safeLoadRegion("ui/jetpack.png");
+        slowMoImage = safeLoadRegion("ui/slowmo.png");
+        logoImage = safeLoadRegion("ui/logo.png");
     }
 
     public static void dispose() {
@@ -151,31 +176,9 @@ public final class Assets {
         if (fontSmall != null) fontSmall.dispose();
         if (fontMedium != null) fontMedium.dispose();
         if (fontLarge != null) fontLarge.dispose();
-
-        if (playerRun1 != null) playerRun1.dispose();
-        if (playerRun2 != null) playerRun2.dispose();
-        if (playerLeft != null) playerLeft.dispose();
-        if (playerRight != null) playerRight.dispose();
-        if (playerJump != null) playerJump.dispose();
-        if (playerSlide != null) playerSlide.dispose();
-
-        if (roadImage != null) roadImage.dispose();
-        if (barricadeLeft != null) barricadeLeft.dispose();
-        if (barricadeRight != null) barricadeRight.dispose();
-
-        for (Texture t : sideLeft.values()) if (t != null) t.dispose();
-        for (Texture t : sideRight.values()) if (t != null) t.dispose();
-
-        for (Texture t : obstacleTextures) if (t != null) t.dispose();
-        for (Texture t : coinTextures) if (t != null) t.dispose();
-
-        if (heartImage != null) heartImage.dispose();
-        if (shieldImage != null) shieldImage.dispose();
-        if (magnetImage != null) magnetImage.dispose();
-        if (boostImage != null) boostImage.dispose();
-        if (doubleScoreImage != null) doubleScoreImage.dispose();
-        if (jetpackImage != null) jetpackImage.dispose();
-        if (slowMoImage != null) slowMoImage.dispose();
-        if (logoImage != null) logoImage.dispose();
+        for (Texture t : owned) {
+            if (t != null) t.dispose();
+        }
+        owned.clear();
     }
 }
