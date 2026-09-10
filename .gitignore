@@ -5,6 +5,15 @@ raw/
 # Compiled classes
 *.class
 
+# Gradle and build outputs
+.gradle/
+build/
+*/build/
+android/libs/
+local.properties
+.cxx/
+*.apk
+
 # Local player progress, created at runtime on each machine
 savegame.properties
 savegame.properties.bak
